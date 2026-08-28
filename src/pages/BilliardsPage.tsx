@@ -8,7 +8,7 @@ import {
   type BilliardsSceneHandle,
   type StrokeStyle,
 } from '../game/billiards/BilliardsScene'
-import type { BilliardsMode, ShotVerdict, Vec2 } from '../game/billiards/engine'
+import { getTableSpec, type BilliardsMode, type ShotVerdict, type Vec2 } from '../game/billiards/engine'
 import { submitScore } from '../lib/leaderboard'
 import { nowMs } from '../lib/time'
 
@@ -52,6 +52,7 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
   const [saved, setSaved] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
   const info = copy[mode]
+  const tableSpec = getTableSpec(mode)
 
   function updateSpin(event: PointerEvent<HTMLButtonElement>) {
     const rect = event.currentTarget.getBoundingClientRect()
@@ -133,6 +134,9 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
             }}
           />
           <div className={`view-badge ${view}`}><Eye size={14} /> {view === 'aim' ? 'PLAYER VIEW' : 'TABLE VIEW'}</div>
+          <div className="table-spec-badge">
+            {tableSpec.label} · {Math.round(tableSpec.playingLength * 1000)}×{Math.round(tableSpec.playingWidth * 1000)}mm · Ø{(tableSpec.ballDiameter * 1000).toFixed(1)}mm · {Math.round(tableSpec.ballMass * 1000)}g
+          </div>
           {lastVerdict && (
             <div className={`shot-verdict ${lastVerdict.success ? 'success' : 'miss'}`}>
               <span>{lastVerdict.success ? <Check /> : <X />}</span>

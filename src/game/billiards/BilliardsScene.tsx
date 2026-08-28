@@ -7,12 +7,13 @@ import {
   areBallsStopped,
   createInitialBalls,
   evaluateShot,
+  getTableSpec,
   stepPhysics,
-  TABLE,
   type BallState,
   type BilliardsMode,
   type ShotEvent,
   type ShotVerdict,
+  type TableSpec,
   type Vec2,
 } from './engine'
 
@@ -44,85 +45,160 @@ interface ControllerBridge {
   reset: () => void
 }
 
-function CameraRig({ view, angle, balls }: { view: SceneProps['view']; angle: number; balls: RefObject<BallState[]> }) {
-  const { camera } = useThree()
+const WORLD_SCALE = 3.5
+const CLOTH_THICKNESS = 0.035 * WORLD_SCALE
+const CLOTH_TOP = CLOTH_THICKNESS / 2
+const PHYSICS_STEP = 1 / 240
+const FLOOR_Y = -0.7 * WORLD_SCALE
+
+function world(metres: number) {
+  return metres * WORLD_SCALE
+}
+
+function overviewCamera(spec: TableSpec, aspect = 1.5): [number, number, number] {
+  const length = world(spec.playingLength)
+  const portraitDistance = Math.max(1, 1.48 / aspect)
+  return [0, length * 0.82 * portraitDistance, length * 0.625 * portraitDistance]
+}
+
+function CameraRig({ mode, view, angle, balls }: { mode: BilliardsMode; view: SceneProps['view']; angle: number; balls: RefObject<BallState[]> }) {
+  const { camera, size } = useThree()
+  const spec = getTableSpec(mode)
+  const initialPosition = useMemo(
+    () => overviewCamera(spec, size.width / Math.max(size.height, 1)),
+    [size.height, size.width, spec],
+  )
   const targetPosition = useMemo(() => new Vector3(), [])
   const lookTarget = useMemo(() => new Vector3(), [])
-  const smoothedLookTarget = useMemo(() => new Vector3(0, 0.05, 0), [])
+  const smoothedLookTarget = useMemo(() => new Vector3(0, CLOTH_TOP, 0), [])
 
   useLayoutEffect(() => {
-    camera.position.set(0, 8.2, 6.25)
+    camera.position.set(...initialPosition)
+    smoothedLookTarget.set(0, CLOTH_TOP, 0)
     camera.lookAt(smoothedLookTarget)
     camera.updateProjectionMatrix()
-  }, [camera, smoothedLookTarget])
+  }, [camera, initialPosition, smoothedLookTarget])
 
   useFrame((_, delta) => {
     const cue = balls.current?.find((ball) => ball.id === 'cue')
     if (!cue) return
-    const speed = 1 - Math.exp(-delta * 5.5)
+    const smoothing = 1 - Math.exp(-delta * 5.5)
     if (view === 'aim') {
+      const behind = world(0.76)
+      const lookAhead = world(1.18)
       targetPosition.set(
-        cue.position.x - Math.cos(angle) * 1.3,
-        0.94,
-        cue.position.y - Math.sin(angle) * 1.3,
+        world(cue.position.x) - Math.cos(angle) * behind,
+        CLOTH_TOP + world(0.34),
+        world(cue.position.y) - Math.sin(angle) * behind,
       )
-      lookTarget.set(cue.position.x + Math.cos(angle) * 3.2, 0.2, cue.position.y + Math.sin(angle) * 3.2)
+      lookTarget.set(
+        world(cue.position.x) + Math.cos(angle) * lookAhead,
+        CLOTH_TOP + world(0.045),
+        world(cue.position.y) + Math.sin(angle) * lookAhead,
+      )
     } else {
-      targetPosition.set(0, 8.2, 6.25)
-      lookTarget.set(0, 0.05, 0)
+      targetPosition.set(...initialPosition)
+      lookTarget.set(0, CLOTH_TOP, 0)
     }
-    camera.position.lerp(targetPosition, speed)
-    smoothedLookTarget.lerp(lookTarget, speed)
+    camera.position.lerp(targetPosition, smoothing)
+    smoothedLookTarget.lerp(lookTarget, smoothing)
     camera.lookAt(smoothedLookTarget)
     camera.updateProjectionMatrix()
   })
   return null
 }
 
-function Table() {
-  const diamonds = [-4, -3, -2, -1, 0, 1, 2, 3, 4]
+function Table({ spec }: { spec: TableSpec }) {
+  const playingLength = world(spec.playingLength)
+  const playingWidth = world(spec.playingWidth)
+  const frameWidth = world(spec.frameWidth)
+  const cushionDepth = world(0.05)
+  const cushionHeight = world(0.075)
+  const cushionNoseY = CLOTH_TOP + world(spec.cushionNoseHeight)
+  const cushionNoseSize = world(0.008)
+  const baseHeight = world(0.18)
+  const outerLength = playingLength + 2 * (frameWidth + cushionDepth)
+  const outerWidth = playingWidth + 2 * (frameWidth + cushionDepth)
+  const longRailLength = playingLength + 2 * cushionDepth
+  const shortRailLength = playingWidth + 2 * cushionDepth
+  const longRailZ = playingWidth / 2 + cushionDepth / 2
+  const shortRailX = playingLength / 2 + cushionDepth / 2
+  const railY = CLOTH_TOP + cushionHeight / 2
+  const markerY = CLOTH_TOP + cushionHeight + 0.01
+  const longMarkerZ = playingWidth / 2 + cushionDepth + frameWidth * 0.48
+  const shortMarkerX = playingLength / 2 + cushionDepth + frameWidth * 0.48
+  const diamondSize = world(0.025)
+  const legWidth = world(0.16)
+  const legHeight = Math.abs(FLOOR_Y) - baseHeight
+  const legY = -baseHeight - legHeight / 2
+  const legX = playingLength * 0.34
+  const legZ = playingWidth * 0.31
+  const longDiamonds = Array.from({ length: 9 }, (_, index) => (index - 4) * playingLength / 8)
+  const shortDiamonds = Array.from({ length: 5 }, (_, index) => (index - 2) * playingWidth / 4)
+
   return (
     <group>
-      <RoundedBox args={[11.25, 0.72, 6.25]} radius={0.22} smoothness={4} position={[0, -0.34, 0]} castShadow receiveShadow>
+      <RoundedBox args={[outerLength, baseHeight, outerWidth]} radius={world(0.06)} smoothness={4} position={[0, -baseHeight / 2, 0]} castShadow receiveShadow>
         <meshStandardMaterial color="#261812" roughness={0.38} metalness={0.08} />
       </RoundedBox>
       <mesh position={[0, 0, 0]} receiveShadow>
-        <boxGeometry args={[10, 0.18, 5]} />
+        <boxGeometry args={[playingLength, CLOTH_THICKNESS, playingWidth]} />
         <meshStandardMaterial color="#0c624c" roughness={0.88} />
       </mesh>
-      <mesh position={[0, 0.22, 2.69]} castShadow>
-        <boxGeometry args={[10.9, 0.46, 0.42]} />
+      <mesh position={[0, railY, longRailZ]} castShadow>
+        <boxGeometry args={[longRailLength, cushionHeight, cushionDepth]} />
         <meshStandardMaterial color="#173e32" roughness={0.62} />
       </mesh>
-      <mesh position={[0, 0.22, -2.69]} castShadow>
-        <boxGeometry args={[10.9, 0.46, 0.42]} />
+      <mesh position={[0, railY, -longRailZ]} castShadow>
+        <boxGeometry args={[longRailLength, cushionHeight, cushionDepth]} />
         <meshStandardMaterial color="#173e32" roughness={0.62} />
       </mesh>
-      <mesh position={[5.19, 0.22, 0]} castShadow>
-        <boxGeometry args={[0.42, 0.46, 5.8]} />
+      <mesh position={[shortRailX, railY, 0]} castShadow>
+        <boxGeometry args={[cushionDepth, cushionHeight, shortRailLength]} />
         <meshStandardMaterial color="#173e32" roughness={0.62} />
       </mesh>
-      <mesh position={[-5.19, 0.22, 0]} castShadow>
-        <boxGeometry args={[0.42, 0.46, 5.8]} />
+      <mesh position={[-shortRailX, railY, 0]} castShadow>
+        <boxGeometry args={[cushionDepth, cushionHeight, shortRailLength]} />
         <meshStandardMaterial color="#173e32" roughness={0.62} />
       </mesh>
-      {diamonds.map((x) => (
+      <mesh position={[0, cushionNoseY, playingWidth / 2 + cushionNoseSize / 2]}>
+        <boxGeometry args={[playingLength, cushionNoseSize, cushionNoseSize]} />
+        <meshStandardMaterial color="#245b49" roughness={0.72} />
+      </mesh>
+      <mesh position={[0, cushionNoseY, -playingWidth / 2 - cushionNoseSize / 2]}>
+        <boxGeometry args={[playingLength, cushionNoseSize, cushionNoseSize]} />
+        <meshStandardMaterial color="#245b49" roughness={0.72} />
+      </mesh>
+      <mesh position={[playingLength / 2 + cushionNoseSize / 2, cushionNoseY, 0]}>
+        <boxGeometry args={[cushionNoseSize, cushionNoseSize, playingWidth]} />
+        <meshStandardMaterial color="#245b49" roughness={0.72} />
+      </mesh>
+      <mesh position={[-playingLength / 2 - cushionNoseSize / 2, cushionNoseY, 0]}>
+        <boxGeometry args={[cushionNoseSize, cushionNoseSize, playingWidth]} />
+        <meshStandardMaterial color="#245b49" roughness={0.72} />
+      </mesh>
+      {[-1, 1].flatMap((x) => [-1, 1].map((z) => (
+        <RoundedBox key={`${x}-${z}`} args={[legWidth, legHeight, legWidth]} radius={world(0.025)} smoothness={3} position={[x * legX, legY, z * legZ]} castShadow>
+          <meshStandardMaterial color="#211712" roughness={0.44} metalness={0.08} />
+        </RoundedBox>
+      )))}
+      {longDiamonds.map((x) => (
         <group key={x}>
-          <mesh position={[x * 1.08, 0.47, 2.88]} rotation={[-Math.PI / 2, 0, Math.PI / 4]}>
-            <planeGeometry args={[0.09, 0.09]} /><meshStandardMaterial color="#d9bd78" metalness={0.65} roughness={0.25} />
+          <mesh position={[x, markerY, longMarkerZ]} rotation={[-Math.PI / 2, 0, Math.PI / 4]}>
+            <planeGeometry args={[diamondSize, diamondSize]} /><meshStandardMaterial color="#d9bd78" metalness={0.65} roughness={0.25} />
           </mesh>
-          <mesh position={[x * 1.08, 0.47, -2.88]} rotation={[-Math.PI / 2, 0, Math.PI / 4]}>
-            <planeGeometry args={[0.09, 0.09]} /><meshStandardMaterial color="#d9bd78" metalness={0.65} roughness={0.25} />
+          <mesh position={[x, markerY, -longMarkerZ]} rotation={[-Math.PI / 2, 0, Math.PI / 4]}>
+            <planeGeometry args={[diamondSize, diamondSize]} /><meshStandardMaterial color="#d9bd78" metalness={0.65} roughness={0.25} />
           </mesh>
         </group>
       ))}
-      {[-1.6, -0.8, 0, 0.8, 1.6].map((z) => (
+      {shortDiamonds.map((z) => (
         <group key={z}>
-          <mesh position={[5.39, 0.47, z]} rotation={[-Math.PI / 2, 0, Math.PI / 4]}>
-            <planeGeometry args={[0.09, 0.09]} /><meshStandardMaterial color="#d9bd78" metalness={0.65} roughness={0.25} />
+          <mesh position={[shortMarkerX, markerY, z]} rotation={[-Math.PI / 2, 0, Math.PI / 4]}>
+            <planeGeometry args={[diamondSize, diamondSize]} /><meshStandardMaterial color="#d9bd78" metalness={0.65} roughness={0.25} />
           </mesh>
-          <mesh position={[-5.39, 0.47, z]} rotation={[-Math.PI / 2, 0, Math.PI / 4]}>
-            <planeGeometry args={[0.09, 0.09]} /><meshStandardMaterial color="#d9bd78" metalness={0.65} roughness={0.25} />
+          <mesh position={[-shortMarkerX, markerY, z]} rotation={[-Math.PI / 2, 0, Math.PI / 4]}>
+            <planeGeometry args={[diamondSize, diamondSize]} /><meshStandardMaterial color="#d9bd78" metalness={0.65} roughness={0.25} />
           </mesh>
         </group>
       ))}
@@ -130,26 +206,27 @@ function Table() {
   )
 }
 
-function Ball({ id, color, meshRef }: { id: BallState['id']; color: string; meshRef: (mesh: Mesh | null) => void }) {
+function Ball({ id, color, radius, meshRef }: { id: BallState['id']; color: string; radius: number; meshRef: (mesh: Mesh | null) => void }) {
   return (
-    <group>
-      <mesh ref={meshRef} castShadow>
-        <sphereGeometry args={[TABLE.ballRadius, 48, 32]} />
-        <meshPhysicalMaterial color={color} roughness={0.19} clearcoat={1} clearcoatRoughness={0.13} />
-        {id === 'cue' && (
-          <mesh position={[0, TABLE.ballRadius * 0.97, 0]}>
-            <circleGeometry args={[0.025, 16]} /><meshBasicMaterial color="#c94b3f" />
-          </mesh>
-        )}
-      </mesh>
-    </group>
+    <mesh ref={meshRef} castShadow>
+      <sphereGeometry args={[radius, 48, 32]} />
+      <meshPhysicalMaterial color={color} roughness={0.19} clearcoat={1} clearcoatRoughness={0.13} />
+      {id === 'cue' && (
+        <mesh position={[0, radius * 0.99, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <circleGeometry args={[radius * 0.14, 16]} /><meshBasicMaterial color="#c94b3f" />
+        </mesh>
+      )}
+    </mesh>
   )
 }
 
-function Cue({ balls, active, angle, visible, pullRef }: { balls: RefObject<BallState[]>; active: RefObject<boolean>; angle: number; visible: boolean; pullRef: RefObject<number> }) {
+function Cue({ spec, balls, active, angle, visible, pullRef }: { spec: TableSpec; balls: RefObject<BallState[]>; active: RefObject<boolean>; angle: number; visible: boolean; pullRef: RefObject<number> }) {
   const ref = useRef<Group>(null)
   const quaternion = useMemo(() => new Quaternion(), [])
   const direction = useMemo(() => new Vector3(), [])
+  const cueLength = world(1.42)
+  const ballRadius = world(spec.ballDiameter / 2)
+  const cueOffset = cueLength / 2 + ballRadius + world(0.018)
 
   useFrame(() => {
     if (!ref.current) return
@@ -159,9 +236,9 @@ function Cue({ balls, active, angle, visible, pullRef }: { balls: RefObject<Ball
     quaternion.setFromUnitVectors(new Vector3(0, 1, 0), direction)
     const pull = pullRef.current ?? 0
     ref.current.position.set(
-      cue.position.x - Math.cos(angle) * (1.78 + pull),
-      0.29,
-      cue.position.y - Math.sin(angle) * (1.78 + pull),
+      world(cue.position.x) - Math.cos(angle) * (cueOffset + pull),
+      CLOTH_TOP + ballRadius,
+      world(cue.position.y) - Math.sin(angle) * (cueOffset + pull),
     )
     ref.current.quaternion.copy(quaternion)
     ref.current.visible = visible && !active.current
@@ -170,41 +247,51 @@ function Cue({ balls, active, angle, visible, pullRef }: { balls: RefObject<Ball
   return (
     <group ref={ref}>
       <mesh castShadow>
-        <cylinderGeometry args={[0.028, 0.046, 3.05, 18]} />
+        <cylinderGeometry args={[world(0.006), world(0.014), cueLength, 18]} />
         <meshStandardMaterial color="#c99650" roughness={0.34} />
       </mesh>
-      <mesh position={[0, 1.51, 0]}>
-        <cylinderGeometry args={[0.03, 0.03, 0.08, 16]} />
+      <mesh position={[0, cueLength / 2, 0]}>
+        <cylinderGeometry args={[world(0.006), world(0.006), world(0.025), 16]} />
         <meshStandardMaterial color="#6ca8a1" roughness={0.7} />
       </mesh>
     </group>
   )
 }
 
-function AimGuide({ balls, active, angle, visible }: { balls: RefObject<BallState[]>; active: RefObject<boolean>; angle: number; visible: boolean }) {
+function AimGuide({ spec, balls, active, angle, visible }: { spec: TableSpec; balls: RefObject<BallState[]>; active: RefObject<boolean>; angle: number; visible: boolean }) {
   const ref = useRef<Mesh>(null)
+  const length = world(spec.playingLength * 0.82)
+  const radius = world(spec.ballDiameter / 2)
   useFrame(() => {
     const cue = balls.current?.[0]
     if (!cue || !ref.current) return
     ref.current.visible = visible && !active.current
-    ref.current.position.set(cue.position.x + Math.cos(angle) * 3.5, 0.315, cue.position.y + Math.sin(angle) * 3.5)
+    ref.current.position.set(
+      world(cue.position.x) + Math.cos(angle) * length / 2,
+      CLOTH_TOP + radius + 0.015,
+      world(cue.position.y) + Math.sin(angle) * length / 2,
+    )
     ref.current.rotation.y = -angle
   })
   return (
     <mesh ref={ref}>
-      <boxGeometry args={[7, 0.008, 0.012]} />
+      <boxGeometry args={[length, 0.008, 0.012]} />
       <meshBasicMaterial color="#dce7cc" transparent opacity={0.32} />
     </mesh>
   )
 }
 
 function World({ mode, view, angle, onShotStart, onShotLaunched, onShotEnd, controller }: SceneProps & { controller: RefObject<ControllerBridge | null> }) {
+  const spec = getTableSpec(mode)
+  const ballRadius = world(spec.ballDiameter / 2)
   const balls = useRef<BallState[]>(createInitialBalls(mode))
   const meshMap = useRef(new Map<string, Mesh>())
   const events = useRef<ShotEvent[]>([])
   const active = useRef(false)
   const restFrames = useRef(0)
+  const physicsAccumulator = useRef(0)
   const pullRef = useRef(0)
+  const rotationAxis = useMemo(() => new Vector3(), [])
   const animation = useRef<{ elapsed: number; duration: number; settings: ShotSettings } | null>(null)
   const renderBalls = mode === 'four-ball'
     ? [
@@ -229,6 +316,7 @@ function World({ mode, view, angle, onShotStart, onShotLaunched, onShotEnd, cont
       events.current = []
       active.current = false
       animation.current = null
+      physicsAccumulator.current = 0
       pullRef.current = 0
       restFrames.current = 0
     },
@@ -239,12 +327,14 @@ function World({ mode, view, angle, onShotStart, onShotLaunched, onShotEnd, cont
       const shot = animation.current
       shot.elapsed += Math.min(rawDelta, 0.05)
       const progress = shot.elapsed / shot.duration
+      const pullDistance = world(0.19)
       pullRef.current = progress < 0.62
-        ? Math.sin((progress / 0.62) * Math.PI * 0.5) * 0.72
-        : Math.max(0, (1 - progress) * 0.24)
+        ? Math.sin((progress / 0.62) * Math.PI * 0.5) * pullDistance
+        : Math.max(0, (1 - progress) * pullDistance * 0.34)
       if (progress >= 1) {
-        applyShot(balls.current[0], shot.settings.angle, shot.settings.power, shot.settings.spin, shot.settings.stroke)
+        applyShot(balls.current[0], mode, shot.settings.angle, shot.settings.power, shot.settings.spin, shot.settings.stroke)
         animation.current = null
+        physicsAccumulator.current = 0
         pullRef.current = 0
         active.current = true
         events.current = []
@@ -253,10 +343,15 @@ function World({ mode, view, angle, onShotStart, onShotLaunched, onShotEnd, cont
     }
 
     if (active.current) {
-      const delta = Math.min(rawDelta, 1 / 24)
-      for (let substep = 0; substep < 3; substep += 1) {
-        stepPhysics(balls.current, delta / 3, (event) => events.current.push(event))
+      physicsAccumulator.current += Math.min(rawDelta, 0.05)
+      let steps = 0
+      while (physicsAccumulator.current >= PHYSICS_STEP && steps < 12) {
+        stepPhysics(balls.current, mode, PHYSICS_STEP, (event) => events.current.push(event))
+        physicsAccumulator.current -= PHYSICS_STEP
+        steps += 1
       }
+      if (steps === 12) physicsAccumulator.current = 0
+
       if (areBallsStopped(balls.current)) {
         restFrames.current += 1
         if (restFrames.current > 8) {
@@ -273,26 +368,30 @@ function World({ mode, view, angle, onShotStart, onShotLaunched, onShotEnd, cont
     for (const ball of balls.current) {
       const mesh = meshMap.current.get(ball.id)
       if (!mesh) continue
-      mesh.position.set(ball.position.x, TABLE.ballRadius + 0.1, ball.position.y)
-      const speed = Math.hypot(ball.velocity.x, ball.velocity.y)
-      if (speed > 0) mesh.rotation.z -= speed * rawDelta / TABLE.ballRadius
+      mesh.position.set(world(ball.position.x), CLOTH_TOP + ballRadius, world(ball.position.y))
+      const angularSpeed = Math.hypot(ball.angularVelocity.x, ball.angularVelocity.y, ball.angularVelocity.z)
+      if (angularSpeed > 0) {
+        rotationAxis.set(ball.angularVelocity.x, ball.angularVelocity.y, ball.angularVelocity.z).normalize()
+        mesh.rotateOnWorldAxis(rotationAxis, angularSpeed * rawDelta)
+      }
     }
   })
 
+  const tableLength = world(spec.playingLength)
   return (
     <>
-      <CameraRig view={view} angle={angle} balls={balls} />
+      <CameraRig mode={mode} view={view} angle={angle} balls={balls} />
       <ambientLight intensity={0.7} />
       <directionalLight position={[2, 8, 4]} intensity={2.2} castShadow shadow-mapSize={[1024, 1024]} />
       <pointLight position={[-4, 4, -3]} color="#68cbb3" intensity={5} distance={12} />
-      <Table />
+      <Table spec={spec} />
       {renderBalls.map((ball) => (
-        <Ball key={ball.id} id={ball.id} color={ball.color} meshRef={(mesh) => { if (mesh) meshMap.current.set(ball.id, mesh) }} />
+        <Ball key={ball.id} id={ball.id} color={ball.color} radius={ballRadius} meshRef={(mesh) => { if (mesh) meshMap.current.set(ball.id, mesh) }} />
       ))}
-      <AimGuide balls={balls} active={active} angle={angle} visible={view === 'aim'} />
-      <Cue balls={balls} active={active} angle={angle} visible={view === 'aim'} pullRef={pullRef} />
-      <ContactShadows position={[0, -0.72, 0]} opacity={0.45} scale={18} blur={2.5} far={8} />
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.72, 0]} receiveShadow>
+      <AimGuide spec={spec} balls={balls} active={active} angle={angle} visible={view === 'aim'} />
+      <Cue spec={spec} balls={balls} active={active} angle={angle} visible={view === 'aim'} pullRef={pullRef} />
+      <ContactShadows position={[0, FLOOR_Y + 0.01, 0]} opacity={0.45} scale={tableLength * 1.8} blur={2.5} far={8} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, FLOOR_Y, 0]} receiveShadow>
         <planeGeometry args={[45, 45]} /><meshStandardMaterial color="#06100d" roughness={1} />
       </mesh>
     </>
@@ -301,6 +400,9 @@ function World({ mode, view, angle, onShotStart, onShotLaunched, onShotEnd, cont
 
 export const BilliardsScene = forwardRef<BilliardsSceneHandle, SceneProps>(function BilliardsScene(props, ref) {
   const controller = useRef<ControllerBridge | null>(null)
+  const spec = getTableSpec(props.mode)
+  const cameraPosition = overviewCamera(spec)
+  const fogNear = world(spec.playingLength)
   useImperativeHandle(ref, () => ({
     shoot: (settings) => controller.current?.shoot(settings) ?? false,
     reset: () => controller.current?.reset(),
@@ -310,12 +412,12 @@ export const BilliardsScene = forwardRef<BilliardsSceneHandle, SceneProps>(funct
     <Canvas
       shadows
       dpr={[1, 1.5]}
-      camera={{ position: [0, 8.2, 6.25], fov: 48, near: 0.1, far: 100 }}
+      camera={{ position: cameraPosition, fov: 48, near: 0.1, far: 100 }}
       gl={{ antialias: true, powerPreference: 'default' }}
       fallback={<div className="webgl-fallback">3D 화면을 불러올 수 없습니다. 브라우저의 WebGL 설정을 확인해 주세요.</div>}
     >
       <color attach="background" args={['#07120e']} />
-      <fog attach="fog" args={['#07120e', 10, 28]} />
+      <fog attach="fog" args={['#07120e', fogNear, fogNear * 2.8]} />
       <World {...props} controller={controller} />
     </Canvas>
   )
