@@ -21,13 +21,15 @@
 
 - 엔진 좌표는 metre–kilogram–second 단위이며 렌더링도 동일한 축척을 사용합니다.
 - 균질한 구의 관성모멘트 `I = 2/5 mr²`, 공-천 접점의 미끄럼 속도, Coulomb 미끄럼 마찰, 구름 저항을 각각 계산합니다.
-- 공-공 충돌은 충격량 기반으로 반발계수 `0.98`과 접선 마찰을 적용하고, 공-쿠션 충돌은 반발계수 `0.98`, 접선 마찰계수 `0.14`와 횡회전을 함께 계산합니다.
+- 공-공 충돌은 충격량 기반으로 반발계수 `0.98`과 접선 마찰을 적용합니다. 공-쿠션은 3D 재료 모델의 내부 반발계수 `0.98`을 평면 반사에 그대로 쓰지 않고, 고속 촬영에서 측정된 유효 반발 `0.818`에 맞춰 `0.84`와 접선 마찰 `0.14`를 사용합니다.
+- 파워는 표시값과 당긴 거리 모두 `0–100%`로 일치하며, 수구 초속은 비선형 곡선으로 약 `0.18–6.2 m/s`입니다. 밀어치기는 회전 전달이 길고, 끊어치기는 속도가 약간 높지만 회전 전달이 짧습니다.
+- 당점은 초크가 미끄러지지 않는 실용 한계인 반지름의 `0.7`까지 제한하며, 옆 당점에는 세기와 당점량에 따른 초기 스쿼트(큐볼 편향)를 적용합니다.
 - 240 Hz 고정 물리 스텝으로 프레임률과 충돌 결과를 분리했습니다.
 - 마찰 기준은 고속 촬영 실험의 미끄럼 `0.178–0.245`, 구름 `0.0127–0.0129`와 가열된 3쿠션 테이블 실측 보정값 `0.008`을 사용합니다.
 
-물리 참고: [Dynamics in Carom and Three Cushion Billiards](https://doi.org/10.1007/BF02919180), [Application of high-speed imaging to determine the dynamics of billiards](https://doi.org/10.1119/1.3157159), [A theoretical analysis of billiard ball dynamics under cushion impacts](https://doi.org/10.1243/09544062JMES1964).
+물리 참고: [Dynamics in Carom and Three Cushion Billiards](https://doi.org/10.1007/BF02919180), [Application of high-speed imaging to determine the dynamics of billiards](https://doi.org/10.1119/1.3157159), [A theoretical analysis of billiard ball dynamics under cushion impacts](https://doi.org/10.1243/09544062JMES1964), [Motions of a billiard ball after a cue stroke](https://arxiv.org/abs/2104.11232), [Movement Variability of Professional Pool Billiards Players](https://doi.org/10.1016/j.proeng.2015.07.240).
 
-실제 테이블은 천의 마모·온습도·가열 상태·쿠션 고무와 큐의 입사각에 따라 계수가 달라집니다. 이 구현은 명시된 공인 장비와 표준 상태를 결정론적으로 재현하며, 점프·스쿼트·큐대 승강각은 아직 모델 범위에 포함하지 않습니다.
+실제 테이블은 천의 마모·온습도·가열 상태·쿠션 고무와 큐의 입사각에 따라 계수가 달라집니다. 이 구현은 명시된 공인 장비와 표준 상태를 결정론적으로 재현합니다. 큐대 승강각이 필요한 점프·마세·스워브와 변형되는 쿠션의 완전한 3D 접촉은 아직 모델 범위에 포함하지 않습니다.
 
 ## 로컬 실행
 

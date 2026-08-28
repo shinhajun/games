@@ -4,6 +4,8 @@ import {
   createInitialBalls,
   evaluateShot,
   getTableSpec,
+  PHYSICS,
+  shotSpeedForPower,
   stepPhysics,
   type ShotEvent,
 } from './engine'
@@ -50,12 +52,33 @@ describe('regulation equipment and rigid-body physics', () => {
     const cue = createInitialBalls('three-cushion')[0]
     applyShot(cue, 'three-cushion', 0, 50, { x: 0, y: 0 }, 'normal')
 
-    expect(cue.velocity.x).toBeCloseTo(0.25 + Math.pow(0.5, 1.7) * 3.3, 6)
+    expect(cue.velocity.x).toBeCloseTo(shotSpeedForPower(50, 'normal'), 6)
     expect(cue.velocity.y).toBeCloseTo(0, 6)
     expect(cue.angularVelocity.z).toBeCloseTo(0, 12)
 
     stepPhysics([cue], 'three-cushion', 1 / 120, () => undefined)
     expect(cue.angularVelocity.z).toBeLessThan(0)
+  })
+
+  it('uses a progressive power curve with a full-power carom shot above 6m/s', () => {
+    expect(shotSpeedForPower(0, 'normal')).toBe(PHYSICS.minimumShotSpeed)
+    expect(shotSpeedForPower(25, 'normal')).toBeGreaterThan(0.9)
+    expect(shotSpeedForPower(50, 'normal')).toBeGreaterThan(2.3)
+    expect(shotSpeedForPower(100, 'normal')).toBe(PHYSICS.maximumShotSpeed)
+    expect(shotSpeedForPower(100, 'punch')).toBeGreaterThan(PHYSICS.maximumShotSpeed)
+  })
+
+  it('limits the strike point to the chalked-tip range and applies side-spin squirt', () => {
+    const cue = createInitialBalls('three-cushion')[0]
+    const spec = getTableSpec('three-cushion')
+    applyShot(cue, 'three-cushion', 0, 100, { x: 1, y: 0 }, 'normal')
+
+    expect(cue.velocity.y).toBeLessThan(0)
+    expect(Math.hypot(cue.velocity.x, cue.velocity.y)).toBeCloseTo(PHYSICS.maximumShotSpeed, 6)
+    expect(Math.abs(cue.angularVelocity.y)).toBeCloseTo(
+      PHYSICS.maximumTipOffset * PHYSICS.maximumShotSpeed / (spec.ballDiameter / 2) * 1.55,
+      6,
+    )
   })
 
   it('transfers almost all head-on momentum at the measured 0.98 restitution', () => {
@@ -88,7 +111,8 @@ describe('regulation equipment and rigid-body physics', () => {
 
     stepPhysics([cue], 'three-cushion', 1 / 120, (event) => events.push(event))
 
-    expect(cue.velocity.x).toBeLessThan(-0.96)
+    expect(cue.velocity.x).toBeLessThan(-0.83)
+    expect(cue.velocity.x).toBeGreaterThan(-0.86)
     expect(events).toEqual([{ type: 'cushion', rail: 'right' }])
   })
 
@@ -104,5 +128,16 @@ describe('regulation equipment and rigid-body physics', () => {
 
     expect(steps).toBeLessThan(45 * 240)
     expect(balls[0].velocity).toEqual({ x: 0, y: 0 })
+  })
+
+  it('does not leave an unrealistic stationary ball spinning in place', () => {
+    const cue = createInitialBalls('three-cushion')[0]
+    cue.velocity = { x: 0.005, y: 0 }
+    cue.angularVelocity = { x: 0, y: 8, z: 0 }
+
+    stepPhysics([cue], 'three-cushion', 1 / 120, () => undefined)
+
+    expect(cue.velocity).toEqual({ x: 0, y: 0 })
+    expect(cue.angularVelocity).toEqual({ x: 0, y: 0, z: 0 })
   })
 })

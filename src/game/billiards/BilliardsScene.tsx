@@ -8,6 +8,7 @@ import {
   createInitialBalls,
   evaluateShot,
   getTableSpec,
+  PHYSICS,
   stepPhysics,
   type BallState,
   type BilliardsMode,
@@ -17,7 +18,7 @@ import {
   type Vec2,
 } from './engine'
 
-export type StrokeStyle = 'push' | 'normal' | 'punch'
+export type StrokeStyle = import('./engine').StrokeStyle
 
 export interface ShotSettings {
   angle: number
@@ -54,6 +55,7 @@ const CLOTH_THICKNESS = 0.035 * WORLD_SCALE
 const CLOTH_TOP = CLOTH_THICKNESS / 2
 const PHYSICS_STEP = 1 / 240
 const FLOOR_Y = -0.7 * WORLD_SCALE
+const MAX_CUE_PULL = 0.3 * WORLD_SCALE
 
 function world(metres: number) {
   return metres * WORLD_SCALE
@@ -251,9 +253,10 @@ function CueBallSpinTarget({ spin, onSpinSelected }: { spin: Vec2; onSpinSelecte
     let x = ((event.clientX - rect.left) / rect.width - 0.5) * 2
     let y = -((event.clientY - rect.top) / rect.height - 0.5) * 2
     const distance = Math.hypot(x, y)
-    if (distance > 1) {
-      x /= distance
-      y /= distance
+    if (distance > PHYSICS.maximumTipOffset) {
+      const scale = PHYSICS.maximumTipOffset / distance
+      x *= scale
+      y *= scale
     }
     onSpinSelected({ x, y })
   }
@@ -280,7 +283,7 @@ function CueBallSpinTarget({ spin, onSpinSelected }: { spin: Vec2; onSpinSelecte
       aria-label="수구 위에서 당점 선택"
     >
       <i className="axis axis-x" /><i className="axis axis-y" />
-      <span style={{ left: `${50 + spin.x * 38}%`, top: `${50 - spin.y * 38}%` }} />
+      <span style={{ left: `${50 + spin.x * 50}%`, top: `${50 - spin.y * 50}%` }} />
       <small>당점 드래그</small>
     </button>
   )
@@ -300,7 +303,7 @@ function Cue({ spec, balls, active, angle, visible, manualPull, pullRef }: { spe
     if (!cue) return
     direction.set(Math.cos(angle), 0, Math.sin(angle)).normalize()
     quaternion.setFromUnitVectors(new Vector3(0, 1, 0), direction)
-    const pull = (pullRef.current ?? 0) + manualPull * world(0.19)
+    const pull = (pullRef.current ?? 0) + manualPull * MAX_CUE_PULL
     ref.current.position.set(
       world(cue.position.x) - Math.cos(angle) * (cueOffset + pull),
       CLOTH_TOP + ballRadius,
@@ -400,7 +403,7 @@ function World({ mode, view, angle, spin, manualPull, onAimSelected, onSpinSelec
       const shot = animation.current
       shot.elapsed += Math.min(rawDelta, 0.05)
       const progress = shot.elapsed / shot.duration
-      const pullDistance = world(0.19)
+      const pullDistance = MAX_CUE_PULL
       pullRef.current = shot.initialPull > 0
         ? Math.pow(Math.max(0, 1 - progress), 2) * shot.initialPull * pullDistance
         : progress < 0.62

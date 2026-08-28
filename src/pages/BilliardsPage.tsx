@@ -8,6 +8,7 @@ import {
   type BilliardsSceneHandle,
   type StrokeStyle,
 } from '../game/billiards/BilliardsScene'
+import { cuePullFraction, powerFromCuePull } from '../game/billiards/controls'
 import { getTableSpec, type BilliardsMode, type ShotVerdict, type Vec2 } from '../game/billiards/engine'
 import { submitScore } from '../lib/leaderboard'
 import { nowMs } from '../lib/time'
@@ -42,6 +43,7 @@ interface AimGesture {
 interface CuePullGesture {
   pointerId: number
   startY: number
+  controlBottom: number
   pull: number
 }
 
@@ -59,8 +61,9 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
   const [sceneKey, setSceneKey] = useState(0)
   const [view, setView] = useState<'overview' | 'aim'>('overview')
   const [angle, setAngle] = useState(10)
-  const [power, setPower] = useState(8)
+  const [power, setPower] = useState(0)
   const [cuePull, setCuePull] = useState(0)
+  const [cueTravel, setCueTravel] = useState(210)
   const [cuePulling, setCuePulling] = useState(false)
   const [spin, setSpin] = useState<Vec2>({ x: 0, y: 0 })
   const [stroke, setStroke] = useState<StrokeStyle>('normal')
@@ -84,7 +87,7 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
   function updateCuePull(pull: number) {
     const normalized = Math.max(0, Math.min(1, pull))
     setCuePull(normalized)
-    setPower(Math.round(8 + normalized * 92))
+    setPower(powerFromCuePull(normalized))
   }
 
   function enterPlayerView(nextAngle = angleRef.current) {
@@ -99,7 +102,7 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
       updateCuePull(0)
       return
     }
-    const shotPower = Math.round(8 + pull * 92)
+    const shotPower = powerFromCuePull(pull)
     if (startedAt.current === 0) startedAt.current = nowMs()
     const launched = sceneRef.current?.shoot({ angle: angleRef.current * Math.PI / 180, power: shotPower, spin, stroke }, pull) ?? false
     if (launched) {
@@ -139,7 +142,19 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
     event.preventDefault()
     event.stopPropagation()
     event.currentTarget.setPointerCapture(event.pointerId)
-    cuePullRef.current = { pointerId: event.pointerId, startY: event.clientY, pull: 0 }
+    const controlRect = event.currentTarget.getBoundingClientRect()
+    const shaft = event.currentTarget.querySelector<HTMLElement>('.rail-cue-shaft')
+    if (shaft) {
+      const shaftStyle = getComputedStyle(shaft)
+      const handleCentre = Number.parseFloat(shaftStyle.top) + shaft.offsetHeight + 2
+      setCueTravel(Math.max(24, controlRect.height - 18 - handleCentre))
+    }
+    cuePullRef.current = {
+      pointerId: event.pointerId,
+      startY: event.clientY,
+      controlBottom: controlRect.bottom,
+      pull: 0,
+    }
     setCuePulling(true)
     updateCuePull(0)
   }
@@ -149,8 +164,7 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
     if (!gesture || gesture.pointerId !== event.pointerId) return
     event.preventDefault()
     event.stopPropagation()
-    const maxPull = Math.max(82, Math.min(150, event.currentTarget.clientHeight * 0.48))
-    gesture.pull = Math.max(0, Math.min(1, (event.clientY - gesture.startY) / maxPull))
+    gesture.pull = cuePullFraction(gesture.startY, event.clientY, gesture.controlBottom)
     updateCuePull(gesture.pull)
   }
 
@@ -307,8 +321,9 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
               disabled={view !== 'aim' || shooting || attempts >= 6}
               aria-label="큐를 아래로 당겼다가 놓아 치기"
             >
-              <span className="rail-cue-shaft" style={{ '--cue-pull': cuePull } as CSSProperties}><i /></span>
+              <span className="rail-cue-shaft" style={{ '--cue-offset': `${cuePull * cueTravel}px` } as CSSProperties}><i /></span>
               <span className="rail-cue-guide" />
+              <span className="rail-cue-scale" aria-hidden="true"><i>0</i><i>50</i><i>100</i></span>
               <ChevronsDown className="rail-cue-arrow" />
             </button>
             <small>{shooting ? '진행 중' : view === 'aim' ? cuePulling ? '놓으면 샷' : '당겼다 놓기' : '테이블 터치'}</small>

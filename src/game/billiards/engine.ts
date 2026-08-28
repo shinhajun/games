@@ -77,10 +77,16 @@ export const PHYSICS = {
   gravity: 9.80665,
   ballRestitution: 0.98,
   ballFriction: 0.03,
-  cushionRestitution: 0.98,
+  // Mathavan et al. measured 0.818 for a rolling ball's planar rebound.
+  // The 0.98 material COR belongs inside their full 3D cushion-impact model;
+  // using it directly here would omit vertical/table/spin energy transfer.
+  cushionRestitution: 0.84,
   cushionFriction: 0.14,
   stopSpeed: 0.012,
   stopSpin: 0.35,
+  maximumTipOffset: 0.7,
+  minimumShotSpeed: 0.18,
+  maximumShotSpeed: 6.2,
 } as const
 
 export function getTableSpec(mode: BilliardsMode) {
@@ -172,20 +178,40 @@ function momentOfInertia(spec: TableSpec) {
   return (2 / 5) * spec.ballMass * radius * radius
 }
 
-export function applyShot(ball: BallState, mode: BilliardsMode, angle: number, power: number, spin: Vec2, stroke: 'push' | 'normal' | 'punch') {
+export type StrokeStyle = 'push' | 'normal' | 'punch'
+
+export function shotSpeedForPower(power: number, stroke: StrokeStyle) {
+  const normalizedPower = clamp(power, 0, 100) / 100
+  const strokePower = stroke === 'punch' ? 1.04 : stroke === 'push' ? 0.96 : 1
+  const speedRange = PHYSICS.maximumShotSpeed - PHYSICS.minimumShotSpeed
+  return (PHYSICS.minimumShotSpeed + Math.pow(normalizedPower, 1.45) * speedRange) * strokePower
+}
+
+function limitedTipOffset(spin: Vec2) {
+  const length = Math.hypot(spin.x, spin.y)
+  if (length <= PHYSICS.maximumTipOffset) return spin
+  const scale = PHYSICS.maximumTipOffset / length
+  return { x: spin.x * scale, y: spin.y * scale }
+}
+
+export function applyShot(ball: BallState, mode: BilliardsMode, angle: number, power: number, spin: Vec2, stroke: StrokeStyle) {
   const spec = getTableSpec(mode)
   const radius = spec.ballDiameter / 2
   const normalizedPower = clamp(power, 0, 100) / 100
-  const strokePower = stroke === 'punch' ? 1.08 : stroke === 'push' ? 0.94 : 1
-  const speed = (0.25 + Math.pow(normalizedPower, 1.7) * 3.3) * strokePower
-  const direction = { x: Math.cos(angle), y: Math.sin(angle) }
+  const speed = shotSpeedForPower(power, stroke)
+  const tipOffset = limitedTipOffset(spin)
+  // Side spin makes the ball initially deflect away from the struck side.
+  // The small angle grows with both tip offset and shot speed.
+  const squirtAngle = -tipOffset.x * (0.7 + normalizedPower * 1.5) * Math.PI / 180
+  const launchAngle = angle + squirtAngle
+  const direction = { x: Math.cos(launchAngle), y: Math.sin(launchAngle) }
   const strokeSpin = stroke === 'push' ? 1.12 : stroke === 'punch' ? 0.74 : 1
-  const rollingRatio = clamp(spin.y, -1, 1) * 1.75 * strokeSpin
+  const rollingRatio = tipOffset.y * 1.75 * strokeSpin
 
   ball.velocity = { x: direction.x * speed, y: direction.y * speed }
   ball.angularVelocity = {
     x: direction.y * speed / radius * rollingRatio,
-    y: -clamp(spin.x, -1, 1) * speed / radius * 1.55 * strokeSpin,
+    y: -tipOffset.x * speed / radius * 1.55 * strokeSpin,
     z: -direction.x * speed / radius * rollingRatio,
   }
 }
@@ -237,6 +263,7 @@ function applyClothFriction(ball: BallState, spec: TableSpec, dt: number) {
   if (Math.hypot(ball.velocity.x, ball.velocity.y) < PHYSICS.stopSpeed && remainingSlip < 0.003) {
     ball.velocity = { x: 0, y: 0 }
     ball.angularVelocity.x = 0
+    ball.angularVelocity.y = 0
     ball.angularVelocity.z = 0
   }
 }
