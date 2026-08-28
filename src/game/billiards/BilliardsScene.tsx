@@ -63,6 +63,10 @@ function world(metres: number) {
 
 function overviewCamera(spec: TableSpec, aspect = 1.5): [number, number, number] {
   const length = world(spec.playingLength)
+  if (aspect < 0.78) {
+    const portraitDistance = Math.max(1, 0.73 / aspect)
+    return [length * 0.625 * portraitDistance, length * 0.82 * portraitDistance, 0]
+  }
   const portraitDistance = Math.max(1, 1.48 / aspect)
   return [0, length * 0.82 * portraitDistance, length * 0.625 * portraitDistance]
 }
@@ -509,8 +513,8 @@ export const BilliardsScene = forwardRef<BilliardsSceneHandle, SceneProps>(funct
 
   return (
     <Canvas
-      shadows
-      dpr={[1, 1.5]}
+      shadows="basic"
+      dpr={[1, 1.35]}
       camera={{ position: cameraPosition, fov: 48, near: 0.1, far: 100 }}
       gl={{ antialias: true, powerPreference: 'default' }}
       fallback={<div className="webgl-fallback">3D 화면을 불러올 수 없습니다. 브라우저의 WebGL 설정을 확인해 주세요.</div>}

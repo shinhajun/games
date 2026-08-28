@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react'
-import { Anchor, ArrowLeft, Check, Dice5, Hand, RotateCcw, ShipWheel, Sparkles } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Anchor, ArrowLeft, Check, Dice5, Hand, RotateCcw, Sparkles } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useProfile } from '../useProfile'
 import { Leaderboard } from '../components/Leaderboard'
@@ -9,10 +9,12 @@ import { submitScore } from '../lib/leaderboard'
 import { nowMs } from '../lib/time'
 
 const freshDice = () => [1, 2, 3, 4, 5]
+const ROLL_DURATION_MS = 1480
 
 export function YachtPage() {
   const { profile } = useProfile()
   const startedAt = useRef(0)
+  const rollTimer = useRef<number | null>(null)
   const [dice, setDice] = useState(freshDice)
   const [held, setHeld] = useState([false, false, false, false, false])
   const [rolls, setRolls] = useState(0)
@@ -23,6 +25,10 @@ export function YachtPage() {
   const [saved, setSaved] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const total = totalYachtScore(scores)
   const round = Object.keys(scores).length + 1
+
+  useEffect(() => () => {
+    if (rollTimer.current !== null) window.clearTimeout(rollTimer.current)
+  }, [])
 
   function toggleHold(index: number) {
     if (rolls === 0 || rolling) return
@@ -35,10 +41,11 @@ export function YachtPage() {
     setDice((current) => current.map((value, index) => held[index] ? value : Math.floor(Math.random() * 6) + 1))
     setRollNonce((value) => value + 1)
     setRolling(true)
-    window.setTimeout(() => {
+    rollTimer.current = window.setTimeout(() => {
       setRolling(false)
       setRolls((value) => value + 1)
-    }, 920)
+      rollTimer.current = null
+    }, ROLL_DURATION_MS)
   }
 
   function chooseCategory(category: YachtCategory) {
@@ -62,6 +69,8 @@ export function YachtPage() {
   }
 
   function restart() {
+    if (rollTimer.current !== null) window.clearTimeout(rollTimer.current)
+    rollTimer.current = null
     startedAt.current = 0
     setDice(freshDice())
     setHeld([false, false, false, false, false])
@@ -83,7 +92,7 @@ export function YachtPage() {
         <div className="dice-column">
           <div className="dice-stage">
             <DiceScene values={dice} held={held} rolling={rolling} rollNonce={rollNonce} onToggle={toggleHold} />
-            <div className="dice-stage-label"><Anchor size={14} /> ROUND {Math.min(round, 12)} / 12</div>
+            <div className="dice-stage-label"><Anchor size={14} /> ROUND {Math.min(round, 12)}<span>/12</span></div>
             <div className="roll-indicator">{[1, 2, 3].map((roll) => <i className={roll <= rolls ? 'used' : ''} key={roll}>{roll}</i>)}</div>
           </div>
 
@@ -91,19 +100,14 @@ export function YachtPage() {
             <div className="hold-buttons" aria-label="주사위 홀드 선택">
               {dice.map((value, index) => (
                 <button key={index} onClick={() => toggleHold(index)} className={held[index] ? 'held' : ''} disabled={rolls === 0 || rolling}>
-                  <span>{value}</span><small>{held[index] ? <><Check size={12} /> HOLD</> : 'KEEP?'}</small>
+                  <span>{value}</span><small>{held[index] ? <><Check size={12} /> HOLD</> : `DIE ${index + 1}`}</small>
                 </button>
               ))}
             </div>
             <button className="roll-button" onClick={roll} disabled={rolling || rolls >= 3}>
               {rolling ? <><span className="button-loader" /> ROLLING</> : rolls === 0 ? <><Dice5 /> 주사위 굴리기</> : rolls < 3 ? <><Dice5 /> 다시 굴리기 <small>{3 - rolls} LEFT</small></> : <><Hand /> 점수를 선택하세요</>}
             </button>
-            <p><Hand size={14} /> 3D 주사위나 아래 숫자를 눌러 홀드하세요. 홀드한 주사위는 다시 굴러가지 않습니다.</p>
-          </div>
-
-          <div className="yacht-rule-note">
-            <ShipWheel />
-            <div><strong>CLASSIC YACHT RULE</strong><p>턴마다 최대 3번 굴리고, 반드시 비어 있는 카테고리 하나를 채웁니다. 성립하지 않는 조합을 선택하면 0점입니다.</p></div>
+            <p><Hand size={14} /> 주사위를 눌러 홀드 · 턴마다 최대 3회</p>
           </div>
         </div>
 
@@ -120,6 +124,7 @@ export function YachtPage() {
                   className={`${locked !== undefined ? 'locked' : ''} ${candidate === category.max ? 'max-candidate' : ''}`}
                   onClick={() => chooseCategory(category.id)}
                   disabled={locked !== undefined || rolls === 0 || rolling}
+                  aria-label={`${category.label}, ${category.hint}, ${locked !== undefined ? `${locked}점 기록됨` : candidate === null ? '굴린 뒤 선택 가능' : `현재 ${candidate}점`}`}
                 >
                   <span className="category-index">{String(index + 1).padStart(2, '0')}</span>
                   <strong>{category.label}</strong>

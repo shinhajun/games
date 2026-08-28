@@ -1,12 +1,15 @@
 import { Cloud, Gamepad2, Trophy } from 'lucide-react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useProfile } from '../useProfile'
 import { isCloudConnected } from '../lib/leaderboard'
 
 export function AppShell() {
   const { profile } = useProfile()
+  const { pathname } = useLocation()
+  const isGameRoute = pathname.startsWith('/play/')
+
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${isGameRoute ? 'game-shell' : ''}`}>
       <header className="site-header">
         <NavLink className="brand" to="/" aria-label="Hajun Arcade 홈">
           <span className="brand-mark"><Gamepad2 size={20} strokeWidth={2.4} /></span>
