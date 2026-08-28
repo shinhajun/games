@@ -1,7 +1,7 @@
 import { ContactShadows, RoundedBox } from '@react-three/drei'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { forwardRef, useImperativeHandle, useMemo, useRef, type RefObject } from 'react'
-import { Group, Mesh, Object3D, Quaternion, Vector3 } from 'three'
+import { forwardRef, useImperativeHandle, useLayoutEffect, useMemo, useRef, type RefObject } from 'react'
+import { Group, Mesh, Quaternion, Vector3 } from 'three'
 import {
   applyShot,
   areBallsStopped,
@@ -46,9 +46,15 @@ interface ControllerBridge {
 
 function CameraRig({ view, angle, balls }: { view: SceneProps['view']; angle: number; balls: RefObject<BallState[]> }) {
   const { camera } = useThree()
-  const targetObject = useMemo(() => new Object3D(), [])
   const targetPosition = useMemo(() => new Vector3(), [])
   const lookTarget = useMemo(() => new Vector3(), [])
+  const smoothedLookTarget = useMemo(() => new Vector3(0, 0.05, 0), [])
+
+  useLayoutEffect(() => {
+    camera.position.set(0, 8.2, 6.25)
+    camera.lookAt(smoothedLookTarget)
+    camera.updateProjectionMatrix()
+  }, [camera, smoothedLookTarget])
 
   useFrame((_, delta) => {
     const cue = balls.current?.find((ball) => ball.id === 'cue')
@@ -66,9 +72,8 @@ function CameraRig({ view, angle, balls }: { view: SceneProps['view']; angle: nu
       lookTarget.set(0, 0.05, 0)
     }
     camera.position.lerp(targetPosition, speed)
-    targetObject.position.copy(camera.position)
-    targetObject.lookAt(lookTarget)
-    camera.quaternion.slerp(targetObject.quaternion, speed)
+    smoothedLookTarget.lerp(lookTarget, speed)
+    camera.lookAt(smoothedLookTarget)
     camera.updateProjectionMatrix()
   })
   return null
