@@ -1,3 +1,5 @@
+import { resolveCushionImpact } from './cushion'
+
 export type BilliardsMode = 'three-cushion' | 'four-ball'
 export type BallId = 'cue' | 'yellow' | 'red' | 'red2'
 
@@ -77,10 +79,7 @@ export const PHYSICS = {
   gravity: 9.80665,
   ballRestitution: 0.98,
   ballFriction: 0.03,
-  // Mathavan et al. measured 0.818 for a rolling ball's planar rebound.
-  // The 0.98 material COR belongs inside their full 3D cushion-impact model;
-  // using it directly here would omit vertical/table/spin energy transfer.
-  cushionRestitution: 0.84,
+  cushionEnergeticRestitution: 0.98,
   cushionFriction: 0.14,
   stopSpeed: 0.012,
   stopSpin: 0.35,
@@ -88,6 +87,11 @@ export const PHYSICS = {
   minimumShotSpeed: 0.18,
   maximumShotSpeed: 6.2,
 } as const
+
+const CUSHION_PARAMETERS = {
+  energeticRestitution: PHYSICS.cushionEnergeticRestitution,
+  cushionFriction: PHYSICS.cushionFriction,
+}
 
 export function getTableSpec(mode: BilliardsMode) {
   return TABLE_SPECS[mode]
@@ -211,7 +215,7 @@ export function applyShot(ball: BallState, mode: BilliardsMode, angle: number, p
   ball.velocity = { x: direction.x * speed, y: direction.y * speed }
   ball.angularVelocity = {
     x: direction.y * speed / radius * rollingRatio,
-    y: -tipOffset.x * speed / radius * 1.55 * strokeSpin,
+    y: tipOffset.x * speed / radius * 1.55 * strokeSpin,
     z: -direction.x * speed / radius * rollingRatio,
   }
 }
@@ -268,29 +272,6 @@ function applyClothFriction(ball: BallState, spec: TableSpec, dt: number) {
   }
 }
 
-function collideWithCushion(ball: BallState, spec: TableSpec, normal: Vec2) {
-  const normalSpeed = dot(ball.velocity, normal)
-  if (normalSpeed <= 0) return
-
-  const radius = spec.ballDiameter / 2
-  const inertia = momentOfInertia(spec)
-  const tangent = { x: -normal.y, y: normal.x }
-  const contactTangentSpeed = dot(ball.velocity, tangent) - ball.angularVelocity.y * radius
-  const normalImpulse = spec.ballMass * (1 + PHYSICS.cushionRestitution) * normalSpeed
-  const tangentDenominator = 1 / spec.ballMass + radius * radius / inertia
-  const tangentImpulse = clamp(
-    -contactTangentSpeed / tangentDenominator,
-    -PHYSICS.cushionFriction * normalImpulse,
-    PHYSICS.cushionFriction * normalImpulse,
-  )
-
-  ball.velocity.x -= (normalImpulse / spec.ballMass) * normal.x
-  ball.velocity.y -= (normalImpulse / spec.ballMass) * normal.y
-  ball.velocity.x += (tangentImpulse / spec.ballMass) * tangent.x
-  ball.velocity.y += (tangentImpulse / spec.ballMass) * tangent.y
-  ball.angularVelocity.y -= radius * tangentImpulse / inertia
-}
-
 function collideBalls(a: BallState, b: BallState, spec: TableSpec, normal: Vec2) {
   const radius = spec.ballDiameter / 2
   const inertia = momentOfInertia(spec)
@@ -333,13 +314,13 @@ export function stepPhysics(balls: BallState[], mode: BilliardsMode, delta: numb
     if (ball.position.x > xLimit) {
       ball.position.x = xLimit
       if (ball.velocity.x > 0) {
-        collideWithCushion(ball, spec, { x: 1, y: 0 })
+        resolveCushionImpact(ball, spec, { x: 1, y: 0 }, CUSHION_PARAMETERS)
         if (ball.id === 'cue') onEvent({ type: 'cushion', rail: 'right' })
       }
     } else if (ball.position.x < -xLimit) {
       ball.position.x = -xLimit
       if (ball.velocity.x < 0) {
-        collideWithCushion(ball, spec, { x: -1, y: 0 })
+        resolveCushionImpact(ball, spec, { x: -1, y: 0 }, CUSHION_PARAMETERS)
         if (ball.id === 'cue') onEvent({ type: 'cushion', rail: 'left' })
       }
     }
@@ -347,13 +328,13 @@ export function stepPhysics(balls: BallState[], mode: BilliardsMode, delta: numb
     if (ball.position.y > yLimit) {
       ball.position.y = yLimit
       if (ball.velocity.y > 0) {
-        collideWithCushion(ball, spec, { x: 0, y: 1 })
+        resolveCushionImpact(ball, spec, { x: 0, y: 1 }, CUSHION_PARAMETERS)
         if (ball.id === 'cue') onEvent({ type: 'cushion', rail: 'top' })
       }
     } else if (ball.position.y < -yLimit) {
       ball.position.y = -yLimit
       if (ball.velocity.y < 0) {
-        collideWithCushion(ball, spec, { x: 0, y: -1 })
+        resolveCushionImpact(ball, spec, { x: 0, y: -1 }, CUSHION_PARAMETERS)
         if (ball.id === 'cue') onEvent({ type: 'cushion', rail: 'bottom' })
       }
     }

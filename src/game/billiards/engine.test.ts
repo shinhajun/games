@@ -111,8 +111,8 @@ describe('regulation equipment and rigid-body physics', () => {
 
     stepPhysics([cue], 'three-cushion', 1 / 120, (event) => events.push(event))
 
-    expect(cue.velocity.x).toBeLessThan(-0.83)
-    expect(cue.velocity.x).toBeGreaterThan(-0.86)
+    expect(cue.velocity.x).toBeLessThan(-0.96)
+    expect(cue.velocity.x).toBeGreaterThan(-0.99)
     expect(events).toEqual([{ type: 'cushion', rail: 'right' }])
   })
 
