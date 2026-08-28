@@ -2,6 +2,8 @@
 
 `games.hajunshin.com`용 모바일 우선 3D 웹 아케이드입니다.
 
+**Production:** [https://games.hajunshin.com](https://games.hajunshin.com) · **Repository:** [shinhajun/games](https://github.com/shinhajun/games)
+
 ## 게임
 
 - **3쿠션** — 6샷 동안 수구가 두 목적구를 맞히고, 두 번째 목적구 전에 쿠션 3회 이상 접촉하면 1점
@@ -18,7 +20,7 @@ cp .env.example .env
 npm run dev
 ```
 
-Supabase 환경변수가 없으면 기록은 브라우저 `localStorage`에 저장됩니다. 게임 자체는 모두 정상 작동합니다.
+Supabase 환경변수가 없으면 기록은 브라우저 `localStorage`에 저장됩니다. 프로덕션은 서울 리전 Supabase 순위표에 연결되어 있습니다.
 
 ## Supabase 연결
 
@@ -38,7 +40,7 @@ npm run build
 
 - **Cloudflare Pages**: build command `npm run build`, output `dist`. `public/_redirects`가 SPA 라우팅을 처리합니다.
 - **Vercel**: framework Vite, output `dist`. `vercel.json` 포함.
-- 배포 프로젝트에 `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`를 등록한 뒤 `games.hajunshin.com` CNAME을 연결합니다.
+- `main` 브랜치 push 시 GitHub Actions가 검사·빌드 후 Cloudflare Pages `games` 프로젝트에 자동 배포합니다.
 
 ## 기술 구성
 
