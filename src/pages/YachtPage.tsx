@@ -109,6 +109,7 @@ export function YachtPage() {
   }
 
   function restart() {
+    if (saved === 'saving') return
     if (rollTimer.current !== null) window.clearTimeout(rollTimer.current)
     rollTimer.current = null
     runGeneration.current += 1
@@ -189,7 +190,7 @@ export function YachtPage() {
             <h2 id="yacht-result-title">오늘의 항해,<br /><em>{total}점.</em></h2>
             <p>{total >= 220 ? '완벽에 가까운 항해였습니다.' : total >= 160 ? '과감한 선택이 좋은 기록을 만들었어요.' : '다음 항해에는 더 좋은 바람이 불 겁니다.'}</p>
             <div className="result-score"><small>FINAL SCORE</small><strong>{total}<span>/297</span></strong><small>{saved === 'saving' ? '기록 저장 중…' : saved === 'saved' ? '최고 기록 반영 완료' : saved === 'error' ? '로컬 기록 저장 완료' : ''}</small></div>
-            <div className="result-actions"><button className="primary-button" onClick={restart}><RotateCcw /> 다시 항해</button><Link className="text-button" to="/leaderboard">전체 순위 보기</Link></div>
+            <div className="result-actions"><button className="primary-button" onClick={restart} disabled={saved === 'saving'}><RotateCcw /> 다시 항해</button><Link className="text-button" to="/leaderboard">전체 순위 보기</Link></div>
             <Leaderboard key={saved} game="yacht" compact />
           </div>
         </div>

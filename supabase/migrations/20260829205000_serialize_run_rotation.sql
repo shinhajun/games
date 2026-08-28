@@ -1,0 +1,160 @@
+-- Rotate same-game tokens instead of reusing them so an in-flight score submit
+-- can never consume the token assigned to a newly started game.
+create or replace function public.start_arcade_run(p_game text)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  requester_id uuid := auth.uid();
+  new_run_id uuid;
+  recent_run_count integer;
+  daily_run_count integer;
+  active_run_count integer;
+begin
+  if requester_id is null then
+    raise exception 'authentication required';
+  end if;
+  if p_game not in ('three-cushion', 'four-ball', 'yacht') then
+    raise exception 'invalid game';
+  end if;
+
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(requester_id::text, 0));
+
+  delete from public.arcade_runs
+  where id in (
+    select id from public.arcade_runs
+    where started_at < clock_timestamp() - interval '2 days'
+    order by started_at
+    limit 200
+  );
+
+  select count(*) into recent_run_count
+  from public.arcade_runs
+  where device_id = requester_id
+    and started_at > clock_timestamp() - interval '1 minute';
+
+  select count(*) into daily_run_count
+  from public.arcade_runs
+  where device_id = requester_id
+    and started_at > clock_timestamp() - interval '1 day';
+
+  if recent_run_count >= 8 or daily_run_count >= 100 then
+    raise exception 'too many run starts';
+  end if;
+
+  -- Starting this game explicitly retires its previous token. The UID lock is
+  -- shared with score submission, so either the old score wins first or this
+  -- new run wins first; the newly issued token is never consumed by the old game.
+  update public.arcade_runs
+  set submitted_at = clock_timestamp()
+  where device_id = requester_id
+    and game = p_game
+    and submitted_at is null;
+
+  select count(*) into active_run_count
+  from public.arcade_runs
+  where device_id = requester_id
+    and submitted_at is null
+    and started_at > clock_timestamp() - interval '2 hours';
+
+  if active_run_count >= 4 then
+    raise exception 'too many active runs';
+  end if;
+
+  insert into public.arcade_runs (device_id, game)
+  values (requester_id, p_game)
+  returning id into new_run_id;
+
+  return new_run_id;
+end;
+$$;
+
+revoke all on function public.start_arcade_run(text) from public, anon;
+grant execute on function public.start_arcade_run(text) to authenticated;
+
+create or replace function public.submit_arcade_score(
+  p_display_name text,
+  p_game text,
+  p_score integer,
+  p_duration_ms integer,
+  p_run_id uuid
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  requester_id uuid := auth.uid();
+  clean_name text := trim(regexp_replace(p_display_name, '\s+', ' ', 'g'));
+  run_started_at timestamptz;
+  server_duration_ms integer;
+  minimum_duration_ms integer;
+begin
+  if requester_id is null then
+    raise exception 'authentication required';
+  end if;
+  if char_length(clean_name) < 2 or char_length(clean_name) > 16 then
+    raise exception 'invalid display name';
+  end if;
+  if p_game not in ('three-cushion', 'four-ball', 'yacht') then
+    raise exception 'invalid game';
+  end if;
+  if p_duration_ms < 0 or p_duration_ms > 7200000 then
+    raise exception 'invalid duration';
+  end if;
+  if (p_game in ('three-cushion', 'four-ball') and p_score not between 0 and 200)
+    or (p_game = 'yacht' and p_score not between 0 and 297) then
+    raise exception 'invalid score';
+  end if;
+
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(requester_id::text, 0));
+
+  select started_at into run_started_at
+  from public.arcade_runs
+  where id = p_run_id
+    and device_id = requester_id
+    and game = p_game
+    and submitted_at is null
+  for update;
+
+  if run_started_at is null then
+    raise exception 'invalid or consumed run';
+  end if;
+
+  server_duration_ms := floor(extract(epoch from (clock_timestamp() - run_started_at)) * 1000)::integer;
+  minimum_duration_ms := case
+    when p_game = 'yacht' then 16000
+    else (p_score + 5) * 400
+  end;
+
+  if server_duration_ms < minimum_duration_ms or server_duration_ms > 7200000 then
+    raise exception 'implausible run duration';
+  end if;
+
+  update public.arcade_runs
+  set submitted_at = clock_timestamp()
+  where id = p_run_id;
+
+  insert into public.leaderboard_scores (
+    device_id, display_name, game, best_score, best_duration_ms, played_count, updated_at
+  ) values (
+    requester_id, clean_name, p_game, p_score, server_duration_ms, 1, clock_timestamp()
+  )
+  on conflict (device_id, game) do update set
+    display_name = excluded.display_name,
+    best_score = greatest(leaderboard_scores.best_score, excluded.best_score),
+    best_duration_ms = case
+      when excluded.best_score > leaderboard_scores.best_score then excluded.best_duration_ms
+      when excluded.best_score = leaderboard_scores.best_score then least(leaderboard_scores.best_duration_ms, excluded.best_duration_ms)
+      else leaderboard_scores.best_duration_ms
+    end,
+    played_count = leaderboard_scores.played_count + 1,
+    updated_at = clock_timestamp();
+end;
+$$;
+
+revoke all on function public.submit_arcade_score(text, text, integer, integer, uuid) from public, anon;
+grant execute on function public.submit_arcade_score(text, text, integer, integer, uuid) to authenticated;

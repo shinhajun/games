@@ -244,6 +244,7 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
   }
 
   function restart() {
+    if (saved === 'saving') return
     if (finishTimer.current !== null) window.clearTimeout(finishTimer.current)
     finishTimer.current = null
     runGeneration.current += 1
@@ -423,7 +424,7 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
             <p>{score >= 10 ? '테이블을 완전히 읽으셨군요.' : score >= 5 ? '좋은 감각입니다. 다음 기록은 더 높을 거예요.' : '각도는 매번 새롭게 보입니다. 다시 읽어보세요.'}</p>
             <div className="result-score"><small>FINAL SCORE</small><strong>{score}<span>PTS</span></strong><small>{saved === 'saving' ? '기록 저장 중…' : saved === 'saved' ? '최고 기록 반영 완료' : saved === 'error' ? '로컬 기록 저장 완료' : ''}</small></div>
             <div className="result-actions">
-              <button className="primary-button" onClick={restart}><RotateCcw /> 다시 도전</button>
+              <button className="primary-button" onClick={restart} disabled={saved === 'saving'}><RotateCcw /> 다시 도전</button>
               <Link className="text-button" to="/leaderboard">전체 순위 보기</Link>
             </div>
             <Leaderboard key={saved} game={mode} compact />
