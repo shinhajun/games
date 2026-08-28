@@ -1,5 +1,5 @@
 import { useRef, useState, type CSSProperties, type PointerEvent, type WheelEvent } from 'react'
-import { ArrowLeft, Check, ChevronLeft, ChevronRight, ChevronsDown, Crosshair, Eye, Gauge, MoveHorizontal, RotateCcw, Send, SlidersHorizontal, Sparkles, Target, X } from 'lucide-react'
+import { ArrowLeft, Check, ChevronsDown, Crosshair, Eye, MoveHorizontal, RotateCcw, Sparkles, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useProfile } from '../useProfile'
 import { Leaderboard } from '../components/Leaderboard'
@@ -36,9 +36,12 @@ const strokeOptions: { id: StrokeStyle; label: string; detail: string }[] = [
 interface AimGesture {
   pointerId: number
   startX: number
-  startY: number
   startAngle: number
-  mode: 'pending' | 'aim' | 'pull'
+}
+
+interface CuePullGesture {
+  pointerId: number
+  startY: number
   pull: number
 }
 
@@ -51,14 +54,14 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
   const startedAt = useRef(0)
   const angleRef = useRef(10)
   const gestureRef = useRef<AimGesture | null>(null)
+  const cuePullRef = useRef<CuePullGesture | null>(null)
   const { profile } = useProfile()
   const [sceneKey, setSceneKey] = useState(0)
   const [view, setView] = useState<'overview' | 'aim'>('overview')
-  const [panelOpen, setPanelOpen] = useState(false)
   const [angle, setAngle] = useState(10)
   const [power, setPower] = useState(8)
   const [cuePull, setCuePull] = useState(0)
-  const [gestureMode, setGestureMode] = useState<AimGesture['mode'] | 'idle'>('idle')
+  const [cuePulling, setCuePulling] = useState(false)
   const [spin, setSpin] = useState<Vec2>({ x: 0, y: 0 })
   const [stroke, setStroke] = useState<StrokeStyle>('normal')
   const [attempts, setAttempts] = useState(0)
@@ -87,9 +90,7 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
   function enterPlayerView(nextAngle = angleRef.current) {
     updateAimAngle(nextAngle)
     updateCuePull(0)
-    setGestureMode('idle')
     setLastVerdict(null)
-    setPanelOpen(false)
     setView('aim')
   }
 
@@ -114,12 +115,8 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
     gestureRef.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
-      startY: event.clientY,
       startAngle: angleRef.current,
-      mode: 'pending',
-      pull: 0,
     }
-    setGestureMode('pending')
   }
 
   function moveAimGesture(event: PointerEvent<HTMLDivElement>) {
@@ -127,32 +124,45 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
     if (!gesture || gesture.pointerId !== event.pointerId) return
     event.preventDefault()
     const dx = event.clientX - gesture.startX
-    const dy = event.clientY - gesture.startY
-
-    if (gesture.mode === 'pending') {
-      if (Math.hypot(dx, dy) < 7) return
-      gesture.mode = Math.abs(dx) > Math.abs(dy) * 1.08 ? 'aim' : 'pull'
-      setGestureMode(gesture.mode)
-    }
-
-    if (gesture.mode === 'aim') {
-      updateAimAngle(gesture.startAngle + dx / Math.max(event.currentTarget.clientWidth, 1) * 120)
-      return
-    }
-
-    const maxPull = Math.max(115, Math.min(220, event.currentTarget.clientHeight * 0.34))
-    gesture.pull = Math.max(0, Math.min(1, dy / maxPull))
-    updateCuePull(gesture.pull)
+    updateAimAngle(gesture.startAngle + dx / Math.max(event.currentTarget.clientWidth, 1) * 120)
   }
 
-  function endAimGesture(event: PointerEvent<HTMLDivElement>, cancelled = false) {
+  function endAimGesture(event: PointerEvent<HTMLDivElement>) {
     const gesture = gestureRef.current
     if (!gesture || gesture.pointerId !== event.pointerId) return
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
     gestureRef.current = null
-    setGestureMode('idle')
-    if (gesture.mode === 'pull' && !cancelled) launchPulledShot(gesture.pull)
-    else if (gesture.mode === 'pull') updateCuePull(0)
+  }
+
+  function beginCuePull(event: PointerEvent<HTMLButtonElement>) {
+    if (view !== 'aim' || shooting || attempts >= 6) return
+    event.preventDefault()
+    event.stopPropagation()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    cuePullRef.current = { pointerId: event.pointerId, startY: event.clientY, pull: 0 }
+    setCuePulling(true)
+    updateCuePull(0)
+  }
+
+  function moveCuePull(event: PointerEvent<HTMLButtonElement>) {
+    const gesture = cuePullRef.current
+    if (!gesture || gesture.pointerId !== event.pointerId) return
+    event.preventDefault()
+    event.stopPropagation()
+    const maxPull = Math.max(82, Math.min(150, event.currentTarget.clientHeight * 0.48))
+    gesture.pull = Math.max(0, Math.min(1, (event.clientY - gesture.startY) / maxPull))
+    updateCuePull(gesture.pull)
+  }
+
+  function endCuePull(event: PointerEvent<HTMLButtonElement>, cancelled = false) {
+    const gesture = cuePullRef.current
+    if (!gesture || gesture.pointerId !== event.pointerId) return
+    event.stopPropagation()
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    cuePullRef.current = null
+    setCuePulling(false)
+    if (cancelled) updateCuePull(0)
+    else launchPulledShot(gesture.pull)
   }
 
   function wheelAim(event: WheelEvent<HTMLDivElement>) {
@@ -175,10 +185,9 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
     startedAt.current = 0
     setSceneKey((key) => key + 1)
     setView('overview')
-    setPanelOpen(false)
     updateAimAngle(10)
     updateCuePull(0)
-    setGestureMode('idle')
+    setCuePulling(false)
     setAttempts(0)
     setScore(0)
     setShotResults([])
@@ -220,7 +229,7 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
             onAimSelected={(nextAngle) => enterPlayerView(nextAngle * 180 / Math.PI)}
             onSpinSelected={setSpin}
             onShotStart={() => { setShooting(true); setLastVerdict(null) }}
-            onShotLaunched={() => { updateCuePull(0); setPanelOpen(false); setView('overview') }}
+            onShotLaunched={() => { setCuePull(0); setCuePulling(false); setView('overview') }}
             onShotEnd={(verdict) => {
               const nextAttempts = attempts + 1
               const nextScore = score + (verdict.success ? 1 : 0)
@@ -234,20 +243,16 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
           />
           {view === 'aim' && !shooting && attempts < 6 && (
             <div
-              className={`shot-gesture-layer ${gestureMode}`}
+              className="shot-gesture-layer"
               onPointerDown={beginAimGesture}
               onPointerMove={moveAimGesture}
               onPointerUp={(event) => endAimGesture(event)}
-              onPointerCancel={(event) => endAimGesture(event, true)}
+              onPointerCancel={(event) => endAimGesture(event)}
               onWheel={wheelAim}
               role="application"
-              aria-label="좌우로 밀어 조준하고 아래로 큐를 당겼다가 놓아 샷"
+              aria-label="화면을 좌우로 밀어 조준"
             >
               <div className="aim-swipe-hint"><MoveHorizontal /> 좌우로 밀어 조준</div>
-              <div className="cue-pull-indicator" style={{ transform: `translate(-50%, ${cuePull * 46}px)` } as CSSProperties}>
-                <span><ChevronsDown /> {gestureMode === 'pull' ? `${power}% · 놓으면 샷` : '아래로 당겨 세기 조절'}</span>
-                <i />
-              </div>
             </div>
           )}
           <div className={`view-badge ${view}`}><Eye size={14} /> {view === 'aim' ? 'PLAYER VIEW' : 'TABLE VIEW'}</div>
@@ -260,85 +265,54 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
               <div><strong>{lastVerdict.title}</strong><small>{lastVerdict.detail}</small></div>
             </div>
           )}
-          <div className="table-hint"><Crosshair size={14} /> {view === 'overview' ? '테이블 위에서 보낼 지점을 터치하세요.' : '좌우로 밀어 조준 · 큐를 아래로 당겼다가 놓아 샷'}</div>
+          <div className="table-hint"><Crosshair size={14} /> {view === 'overview' ? '테이블 위에서 보낼 지점을 터치하세요.' : '좌우로 조준 · 오른쪽 큐를 당겼다가 놓아 샷'}</div>
         </div>
 
-        <button
-          className={`mobile-controls-toggle ${panelOpen ? 'panel-open' : ''}`}
-          onClick={() => setPanelOpen(true)}
-          aria-expanded={panelOpen}
-          aria-controls="shot-controls"
+        <aside
+          className={`shot-rail ${view} ${cuePulling ? 'pulling' : ''}`}
+          aria-label="샷 조작"
+          data-view={view}
+          data-angle={angle.toFixed(1)}
+          data-stroke={stroke}
+          data-power={power}
         >
-          <SlidersHorizontal />
-          <span>샷 설정</span>
-        </button>
-        <button
-          className={`mobile-panel-scrim ${panelOpen ? 'open' : ''}`}
-          onClick={() => setPanelOpen(false)}
-          aria-label="샷 설정 닫기"
-          tabIndex={panelOpen ? 0 : -1}
-        />
+          <button className="rail-view-toggle" onClick={() => view === 'aim' ? setView('overview') : enterPlayerView()} disabled={shooting || attempts >= 6}>
+            <Eye />
+            <span>{view === 'aim' ? '테이블' : '선수뷰'}</span>
+          </button>
 
-        <aside id="shot-controls" className={`shot-panel ${panelOpen ? 'open' : ''}`}>
-          <div className="panel-heading">
-            <span className="eyebrow">SHOT LAB</span>
-            <h2>한 큐 설계</h2>
-            <div className="panel-actions">
-              <button className="icon-button" onClick={() => view === 'aim' ? setView('overview') : enterPlayerView()} disabled={shooting} aria-label="시점 전환">
-                <Eye size={18} />
+          <div className="rail-strokes" role="group" aria-label="스트로크 선택">
+            <small>STROKE</small>
+            {strokeOptions.map((option) => (
+              <button
+                key={option.id}
+                className={`${option.id} ${stroke === option.id ? 'active' : ''}`}
+                onClick={() => setStroke(option.id)}
+                disabled={shooting}
+                aria-label={`${option.label}, ${option.detail}`}
+              >
+                <i /><span>{option.id === 'push' ? '밀기' : option.id === 'punch' ? '끊기' : '기본'}</span>
               </button>
-              <button className="icon-button mobile-panel-close" onClick={() => setPanelOpen(false)} aria-label="샷 설정 닫기">
-                <X size={18} />
-              </button>
-            </div>
+            ))}
           </div>
 
-          <section className="control-section aim-control">
-            <label><span><Target size={15} /> 조준각</span><strong>{angle > 0 ? '+' : ''}{angle.toFixed(1)}°</strong></label>
-            <div className="aim-swipe-control">
-              <button onClick={() => updateAimAngle(angleRef.current - 2)} aria-label="왼쪽으로 2도"><ChevronLeft /></button>
-              <span><MoveHorizontal /> 화면을 좌우로 밀어 미세 조준</span>
-              <button onClick={() => updateAimAngle(angleRef.current + 2)} aria-label="오른쪽으로 2도"><ChevronRight /></button>
-            </div>
-          </section>
-
-          <section className="control-section spin-control">
-            <label><span><Crosshair size={15} /> 당점</span><strong>{Math.abs(spin.x) < 0.08 && Math.abs(spin.y) < 0.08 ? 'CENTER' : `${spin.y >= 0 ? '상' : '하'} ${spin.x >= 0 ? '우' : '좌'}`}</strong></label>
-            <div className="spin-status">
-              <span className="spin-status-ball" aria-hidden="true">
-                <i className="axis axis-x" /><i className="axis axis-y" />
-                <b style={{ left: `${50 + spin.x * 34}%`, top: `${50 - spin.y * 34}%` }} />
-              </span>
-              <p><strong>PLAYER VIEW</strong>의 실제 수구 위에서 당점을 드래그하세요.</p>
-              <button onClick={() => setSpin({ x: 0, y: 0 })} disabled={shooting}>정중앙</button>
-            </div>
-          </section>
-
-          <section className="control-section power-control">
-            <label><span><Gauge size={15} /> 세기</span><strong>{power}%</strong></label>
-            <div className="pull-power-meter"><i style={{ width: `${power}%` }} /></div>
-            <div className="range-labels"><span>SOFT</span><span>MEDIUM</span><span>HARD</span></div>
-            <p className="pull-power-copy"><ChevronsDown /> PLAYER VIEW에서 큐를 아래로 당긴 거리로 결정됩니다.</p>
-          </section>
-
-          <section className="control-section stroke-control">
-            <label><span><Send size={15} /> 스트로크</span></label>
-            <div className="stroke-options">
-              {strokeOptions.map((option) => (
-                <button key={option.id} className={stroke === option.id ? 'active' : ''} onClick={() => setStroke(option.id)} disabled={shooting}>
-                  <strong>{option.label}</strong><small>{option.detail}</small>
-                </button>
-              ))}
-            </div>
-          </section>
-
-          {shooting ? (
-            <div className="shoot-button"><span className="button-loader" /> 공이 멈추는 중</div>
-          ) : view === 'overview' ? (
-            <button className="shoot-button" onClick={() => enterPlayerView()} disabled={attempts >= 6}><Eye /> 현재 각도로 PLAYER VIEW</button>
-          ) : (
-            <div className="pull-shot-guide"><MoveHorizontal /> 좌우 조준 <span /> <ChevronsDown /> 당겼다가 놓아 치기</div>
-          )}
+          <div className="rail-cue-control">
+            <span className="rail-power"><small>POWER</small><strong>{power}</strong></span>
+            <button
+              className="rail-cue-pull"
+              onPointerDown={beginCuePull}
+              onPointerMove={moveCuePull}
+              onPointerUp={(event) => endCuePull(event)}
+              onPointerCancel={(event) => endCuePull(event, true)}
+              disabled={view !== 'aim' || shooting || attempts >= 6}
+              aria-label="큐를 아래로 당겼다가 놓아 치기"
+            >
+              <span className="rail-cue-shaft" style={{ '--cue-pull': cuePull } as CSSProperties}><i /></span>
+              <span className="rail-cue-guide" />
+              <ChevronsDown className="rail-cue-arrow" />
+            </button>
+            <small>{shooting ? '진행 중' : view === 'aim' ? cuePulling ? '놓으면 샷' : '당겼다 놓기' : '테이블 터치'}</small>
+          </div>
         </aside>
       </section>
 

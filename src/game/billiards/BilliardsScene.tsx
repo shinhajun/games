@@ -147,7 +147,7 @@ function Table({ spec }: { spec: TableSpec }) {
       </RoundedBox>
       <mesh position={[0, 0, 0]} receiveShadow>
         <boxGeometry args={[playingLength, CLOTH_THICKNESS, playingWidth]} />
-        <meshStandardMaterial color="#0c624c" roughness={0.88} />
+        <meshStandardMaterial color="#118060" roughness={0.82} />
       </mesh>
       <mesh position={[0, railY, longRailZ]} castShadow>
         <boxGeometry args={[longRailLength, cushionHeight, cushionDepth]} />
@@ -459,9 +459,10 @@ function World({ mode, view, angle, spin, manualPull, onAimSelected, onSpinSelec
   return (
     <>
       <CameraRig mode={mode} view={view} angle={angle} balls={balls} />
-      <ambientLight intensity={0.7} />
-      <directionalLight position={[2, 8, 4]} intensity={2.2} castShadow shadow-mapSize={[1024, 1024]} />
-      <pointLight position={[-4, 4, -3]} color="#68cbb3" intensity={5} distance={12} />
+      <ambientLight intensity={view === 'overview' ? 1.35 : 0.95} />
+      <hemisphereLight args={['#dfffee', '#07120e', view === 'overview' ? 1.8 : 1.15]} />
+      <directionalLight position={[2, 8, 4]} intensity={view === 'overview' ? 3.4 : 2.7} castShadow shadow-mapSize={[1024, 1024]} />
+      <pointLight position={[-4, 4, -3]} color="#8aefd0" intensity={view === 'overview' ? 7 : 5} distance={18} />
       <Table spec={spec} />
       {view === 'overview' && !shotActive && (
         <AimSurface
@@ -498,7 +499,6 @@ export const BilliardsScene = forwardRef<BilliardsSceneHandle, SceneProps>(funct
   const controller = useRef<ControllerBridge | null>(null)
   const spec = getTableSpec(props.mode)
   const cameraPosition = overviewCamera(spec)
-  const fogNear = world(spec.playingLength)
   useImperativeHandle(ref, () => ({
     shoot: (settings, pull) => controller.current?.shoot(settings, pull) ?? false,
     reset: () => controller.current?.reset(),
@@ -513,7 +513,6 @@ export const BilliardsScene = forwardRef<BilliardsSceneHandle, SceneProps>(funct
       fallback={<div className="webgl-fallback">3D 화면을 불러올 수 없습니다. 브라우저의 WebGL 설정을 확인해 주세요.</div>}
     >
       <color attach="background" args={['#07120e']} />
-      <fog attach="fog" args={['#07120e', fogNear, fogNear * 2.8]} />
       <World {...props} controller={controller} />
     </Canvas>
   )
