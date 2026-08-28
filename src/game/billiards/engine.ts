@@ -47,6 +47,10 @@ export interface ShotVerdict {
   contacts: Exclude<BallId, 'cue'>[]
 }
 
+export interface ShotEvaluationOptions {
+  openingShot?: boolean
+}
+
 // Engine units are metres, kilograms, and seconds.
 export const TABLE_SPECS: Record<BilliardsMode, TableSpec> = {
   'three-cushion': {
@@ -59,7 +63,7 @@ export const TABLE_SPECS: Record<BilliardsMode, TableSpec> = {
     frameWidth: 0.125,
     slidingFriction: 0.2,
     rollingFriction: 0.008,
-    spinningFriction: 0.022,
+    spinningFriction: 0.008,
   },
   'four-ball': {
     label: '국제식 중대',
@@ -71,19 +75,20 @@ export const TABLE_SPECS: Record<BilliardsMode, TableSpec> = {
     frameWidth: 0.12,
     slidingFriction: 0.2,
     rollingFriction: 0.0128,
-    spinningFriction: 0.028,
+    spinningFriction: 0.01,
   },
 }
 
 export const PHYSICS = {
   gravity: 9.80665,
   ballRestitution: 0.98,
-  ballFriction: 0.03,
+  ballFriction: 0.06,
   cushionEnergeticRestitution: 0.98,
   cushionFriction: 0.14,
   stopSpeed: 0.012,
   stopSpin: 0.35,
   maximumTipOffset: 0.7,
+  maximumCueElevation: 45,
   minimumShotSpeed: 0.18,
   maximumShotSpeed: 6.2,
 } as const
@@ -103,36 +108,58 @@ function zeroAngularVelocity(): Vec3 {
 
 export function createInitialBalls(mode: BilliardsMode): BallState[] {
   const spec = getTableSpec(mode)
-  const halfLength = spec.playingLength / 2
-  const halfWidth = spec.playingWidth / 2
-  const balls: BallState[] = [
-    { id: 'cue', position: { x: -halfLength * 0.63, y: halfWidth * 0.29 }, velocity: { x: 0, y: 0 }, angularVelocity: zeroAngularVelocity(), color: '#f7f3e8' },
-    { id: 'yellow', position: { x: halfLength * 0.63, y: -halfWidth * 0.29 }, velocity: { x: 0, y: 0 }, angularVelocity: zeroAngularVelocity(), color: '#f4c94d' },
-    { id: 'red', position: { x: halfLength * 0.07, y: halfWidth * 0.064 }, velocity: { x: 0, y: 0 }, angularVelocity: zeroAngularVelocity(), color: '#d94236' },
-  ]
+  const quarterLength = spec.playingLength / 4
+  const stationaryBall = (id: BallId, x: number, y: number, color: string): BallState => ({
+    id,
+    position: { x, y },
+    velocity: { x: 0, y: 0 },
+    angularVelocity: zeroAngularVelocity(),
+    color,
+  })
+
   if (mode === 'four-ball') {
-    balls.push({ id: 'red2', position: { x: halfLength * 0.41, y: halfWidth * 0.5 }, velocity: { x: 0, y: 0 }, angularVelocity: zeroAngularVelocity(), color: '#e65848' })
+    // Korean four-ball: the opening cue ball sits beside the near red. The far
+    // red must be attacked first; the opponent cue ball waits behind it.
+    const cueOffset = 0.16
+    return [
+      stationaryBall('cue', -quarterLength, -cueOffset, '#f7f3e8'),
+      stationaryBall('yellow', spec.playingLength * 3 / 8, 0, '#f4c94d'),
+      stationaryBall('red', quarterLength, 0, '#d94236'),
+      stationaryBall('red2', -quarterLength, 0, '#e65848'),
+    ]
   }
-  return balls
+
+  // UMB Scheme A: red on the top spot, opponent cue on the bottom spot,
+  // and the opening cue ball on either adjacent starting spot.
+  return [
+    stationaryBall('cue', -quarterLength, -0.1825, '#f7f3e8'),
+    stationaryBall('yellow', -quarterLength, 0, '#f4c94d'),
+    stationaryBall('red', quarterLength, 0, '#d94236'),
+  ]
 }
 
-export function evaluateShot(mode: BilliardsMode, events: ShotEvent[]): ShotVerdict {
+export function evaluateShot(mode: BilliardsMode, events: ShotEvent[], options: ShotEvaluationOptions = {}): ShotVerdict {
   const contacts = events
     .filter((event): event is Extract<ShotEvent, { type: 'ball' }> => event.type === 'ball')
     .map((event) => event.target)
   const uniqueContacts = [...new Set(contacts)]
+  const openingFirstEvent = options.openingShot ? events[0] : undefined
+  const invalidOpening = options.openingShot
+    && (openingFirstEvent?.type !== 'ball' || openingFirstEvent.target !== 'red')
 
   if (mode === 'four-ball') {
     const foul = uniqueContacts.includes('yellow')
-    const success = uniqueContacts.includes('red') && uniqueContacts.includes('red2') && !foul
+    const success = uniqueContacts.includes('red') && uniqueContacts.includes('red2') && !foul && !invalidOpening
     return {
       success,
-      title: success ? '득점!' : foul ? '상대 수구 접촉' : '아쉽게 빗나갔어요',
+      title: success ? '득점!' : invalidOpening ? '초구 순서 위반' : foul ? '상대 수구 접촉' : '아쉽게 빗나갔어요',
       detail: success
         ? '두 적구를 모두 맞혔습니다.'
-        : foul
-          ? '노란 공은 상대 수구라 맞히면 파울입니다.'
-          : '한 번의 샷으로 빨간 공 2개를 모두 맞혀야 합니다.',
+        : invalidOpening
+          ? '첫 샷은 수구에서 먼 반대편 빨간 공을 직접 먼저 맞혀야 합니다.'
+          : foul
+            ? '노란 공은 상대 수구라 맞히면 파울입니다.'
+            : '한 번의 샷으로 빨간 공 2개를 모두 맞혀야 합니다.',
       cushions: events.filter((event) => event.type === 'cushion').length,
       contacts: uniqueContacts,
     }
@@ -149,16 +176,18 @@ export function evaluateShot(mode: BilliardsMode, events: ShotEvent[]): ShotVerd
   const cushionCount = secondObjectEventIndex < 0
     ? events.filter((event) => event.type === 'cushion').length
     : events.slice(0, secondObjectEventIndex).filter((event) => event.type === 'cushion').length
-  const success = secondObjectEventIndex >= 0 && cushionCount >= 3
+  const success = secondObjectEventIndex >= 0 && cushionCount >= 3 && !invalidOpening
 
   return {
     success,
-    title: success ? '3쿠션 성공!' : hit.size < 2 ? '두 번째 공을 놓쳤어요' : '쿠션이 부족해요',
+    title: success ? '3쿠션 성공!' : invalidOpening ? '초구 순서 위반' : hit.size < 2 ? '두 번째 공을 놓쳤어요' : '쿠션이 부족해요',
     detail: success
       ? `두 번째 목적구 전에 쿠션 ${cushionCount}회를 채웠습니다.`
-      : hit.size < 2
-        ? '수구가 노란 공과 빨간 공을 모두 맞혀야 합니다.'
-        : `두 번째 목적구 전 쿠션 ${cushionCount}회 — 최소 3회가 필요합니다.`,
+      : invalidOpening
+        ? '첫 샷은 빨간 공을 직접 먼저 맞혀야 합니다.'
+        : hit.size < 2
+          ? '수구가 노란 공과 빨간 공을 모두 맞혀야 합니다.'
+          : `두 번째 목적구 전 쿠션 ${cushionCount}회 — 최소 3회가 필요합니다.`,
     cushions: cushionCount,
     contacts: uniqueContacts,
   }
@@ -184,6 +213,24 @@ function momentOfInertia(spec: TableSpec) {
 
 export type StrokeStyle = 'push' | 'normal' | 'punch'
 
+export interface CueContactGeometry {
+  cueDirection: Vec3
+  sideDirection: Vec3
+  verticalDirection: Vec3
+  contactNormal: Vec3
+  tipOffset: Vec2
+  elevation: number
+}
+
+export interface ShotKinematics {
+  velocity: Vec2
+  angularVelocity: Vec3
+  impulse: Vec3
+  launchAngle: number
+  cueDirection: Vec3
+  contactNormal: Vec3
+}
+
 export function shotSpeedForPower(power: number, stroke: StrokeStyle) {
   const normalizedPower = clamp(power, 0, 100) / 100
   const strokePower = stroke === 'punch' ? 1.04 : stroke === 'push' ? 0.96 : 1
@@ -198,26 +245,90 @@ function limitedTipOffset(spin: Vec2) {
   return { x: spin.x * scale, y: spin.y * scale }
 }
 
-export function applyShot(ball: BallState, mode: BilliardsMode, angle: number, power: number, spin: Vec2, stroke: StrokeStyle) {
+export function cueContactGeometry(angle: number, spin: Vec2, elevationDegrees = 0): CueContactGeometry {
+  const tipOffset = limitedTipOffset(spin)
+  const elevation = clamp(elevationDegrees, 0, PHYSICS.maximumCueElevation) * Math.PI / 180
+  const cosAngle = Math.cos(angle)
+  const sinAngle = Math.sin(angle)
+  const cosElevation = Math.cos(elevation)
+  const sinElevation = Math.sin(elevation)
+  const cueDirection = {
+    x: cosElevation * cosAngle,
+    y: -sinElevation,
+    z: cosElevation * sinAngle,
+  }
+  const sideDirection = { x: -sinAngle, y: 0, z: cosAngle }
+  const verticalDirection = {
+    x: sinElevation * cosAngle,
+    y: cosElevation,
+    z: sinElevation * sinAngle,
+  }
+  const surfaceDepth = Math.sqrt(Math.max(0, 1 - tipOffset.x ** 2 - tipOffset.y ** 2))
+  const contactNormal = {
+    x: -cueDirection.x * surfaceDepth + sideDirection.x * tipOffset.x + verticalDirection.x * tipOffset.y,
+    y: -cueDirection.y * surfaceDepth + sideDirection.y * tipOffset.x + verticalDirection.y * tipOffset.y,
+    z: -cueDirection.z * surfaceDepth + sideDirection.z * tipOffset.x + verticalDirection.z * tipOffset.y,
+  }
+  return { cueDirection, sideDirection, verticalDirection, contactNormal, tipOffset, elevation }
+}
+
+function cross(a: Vec3, b: Vec3): Vec3 {
+  return {
+    x: a.y * b.z - a.z * b.y,
+    y: a.z * b.x - a.x * b.z,
+    z: a.x * b.y - a.y * b.x,
+  }
+}
+
+export function shotKinematics(mode: BilliardsMode, angle: number, power: number, spin: Vec2, stroke: StrokeStyle, elevationDegrees = 0): ShotKinematics {
   const spec = getTableSpec(mode)
   const radius = spec.ballDiameter / 2
   const normalizedPower = clamp(power, 0, 100) / 100
-  const speed = shotSpeedForPower(power, stroke)
-  const tipOffset = limitedTipOffset(spin)
-  // Side spin makes the ball initially deflect away from the struck side.
-  // The small angle grows with both tip offset and shot speed.
-  const squirtAngle = -tipOffset.x * (0.7 + normalizedPower * 1.5) * Math.PI / 180
+  const geometry = cueContactGeometry(angle, spin, elevationDegrees)
+  const speed = shotSpeedForPower(power, stroke) * Math.cos(geometry.elevation) ** 2
+  // A low-deflection carom shaft still squirts immediately away from the struck side.
+  // Elevated-cue swerve is not folded into this value: cloth friction produces it over time.
+  const strokeSquirt = stroke === 'punch' ? 1.08 : stroke === 'push' ? 0.92 : 1
+  const squirtAngle = -geometry.tipOffset.x * (0.25 + normalizedPower * 0.65) * strokeSquirt * Math.PI / 180
   const launchAngle = angle + squirtAngle
   const direction = { x: Math.cos(launchAngle), y: Math.sin(launchAngle) }
-  const strokeSpin = stroke === 'push' ? 1.12 : stroke === 'punch' ? 0.74 : 1
-  const rollingRatio = tipOffset.y * 1.75 * strokeSpin
-
-  ball.velocity = { x: direction.x * speed, y: direction.y * speed }
-  ball.angularVelocity = {
-    x: direction.y * speed / radius * rollingRatio,
-    y: tipOffset.x * speed / radius * 1.55 * strokeSpin,
-    z: -direction.x * speed / radius * rollingRatio,
+  const strokeSpin = stroke === 'push' ? 1.08 : stroke === 'punch' ? 0.84 : 1
+  // The table cancels the cue's downward linear impulse, while its torque about
+  // the contact point still affects the ball. Scale the 3D cue impulse so its
+  // horizontal projection matches the simulated launch momentum exactly.
+  const horizontalImpulse = spec.ballMass * speed
+  const projectedImpulse = horizontalImpulse / Math.max(Math.cos(geometry.elevation), 1e-6)
+  const impulse = {
+    x: geometry.cueDirection.x * projectedImpulse,
+    y: geometry.cueDirection.y * projectedImpulse,
+    z: geometry.cueDirection.z * projectedImpulse,
   }
+  const contact = {
+    x: geometry.contactNormal.x * radius,
+    y: geometry.contactNormal.y * radius,
+    z: geometry.contactNormal.z * radius,
+  }
+  const angularImpulse = cross(contact, impulse)
+  const inertia = momentOfInertia(spec)
+
+  return {
+    velocity: { x: direction.x * speed, y: direction.y * speed },
+    angularVelocity: {
+      x: angularImpulse.x / inertia * strokeSpin,
+      y: angularImpulse.y / inertia * strokeSpin,
+      z: angularImpulse.z / inertia * strokeSpin,
+    },
+    impulse,
+    launchAngle,
+    cueDirection: geometry.cueDirection,
+    contactNormal: geometry.contactNormal,
+  }
+}
+
+export function applyShot(ball: BallState, mode: BilliardsMode, angle: number, power: number, spin: Vec2, stroke: StrokeStyle, elevationDegrees = 0) {
+  const kinematics = shotKinematics(mode, angle, power, spin, stroke, elevationDegrees)
+  ball.velocity = kinematics.velocity
+  ball.angularVelocity = kinematics.angularVelocity
 }
 
 export function areBallsStopped(balls: BallState[]) {
@@ -259,6 +370,7 @@ function applyClothFriction(ball: BallState, spec: TableSpec, dt: number) {
 
   const spinDeceleration = 2.5 * spec.spinningFriction * PHYSICS.gravity / radius
   ball.angularVelocity.y = approachZero(ball.angularVelocity.y, spinDeceleration * dt)
+  if (Math.abs(ball.angularVelocity.y) < PHYSICS.stopSpin) ball.angularVelocity.y = 0
 
   const remainingSlip = Math.hypot(
     ball.velocity.x + ball.angularVelocity.z * radius,
@@ -267,7 +379,6 @@ function applyClothFriction(ball: BallState, spec: TableSpec, dt: number) {
   if (Math.hypot(ball.velocity.x, ball.velocity.y) < PHYSICS.stopSpeed && remainingSlip < 0.003) {
     ball.velocity = { x: 0, y: 0 }
     ball.angularVelocity.x = 0
-    ball.angularVelocity.y = 0
     ball.angularVelocity.z = 0
   }
 }

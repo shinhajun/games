@@ -1,14 +1,16 @@
-import { ContactShadows, Html, RoundedBox } from '@react-three/drei'
+import { ContactShadows, RoundedBox } from '@react-three/drei'
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
-import { forwardRef, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
-import { Group, Mesh, Quaternion, Vector3 } from 'three'
+import { forwardRef, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { DoubleSide, Group, Matrix4, Mesh, Quaternion, Vector3 } from 'three'
 import {
   applyShot,
   areBallsStopped,
   createInitialBalls,
+  cueContactGeometry,
   evaluateShot,
   getTableSpec,
   PHYSICS,
+  shotKinematics,
   stepPhysics,
   type BallState,
   type BilliardsMode,
@@ -25,6 +27,7 @@ export interface ShotSettings {
   power: number
   spin: Vec2
   stroke: StrokeStyle
+  elevation: number
 }
 
 export interface BilliardsSceneHandle {
@@ -36,7 +39,10 @@ interface SceneProps {
   mode: BilliardsMode
   view: 'overview' | 'aim'
   angle: number
+  elevation: number
+  power: number
   spin: Vec2
+  stroke: StrokeStyle
   manualPull: number
   onAimSelected: (angle: number) => void
   onSpinSelected: (spin: Vec2) => void
@@ -71,7 +77,7 @@ function overviewCamera(spec: TableSpec, aspect = 1.5): [number, number, number]
   return [0, length * 0.82 * portraitDistance, length * 0.625 * portraitDistance]
 }
 
-function CameraRig({ mode, view, angle, balls }: { mode: BilliardsMode; view: SceneProps['view']; angle: number; balls: RefObject<BallState[]> }) {
+function CameraRig({ mode, view, angle, elevation, balls }: { mode: BilliardsMode; view: SceneProps['view']; angle: number; elevation: number; balls: RefObject<BallState[]> }) {
   const { camera, size } = useThree()
   const spec = getTableSpec(mode)
   const initialPosition = useMemo(
@@ -96,15 +102,18 @@ function CameraRig({ mode, view, angle, balls }: { mode: BilliardsMode; view: Sc
     if (view === 'aim') {
       const behind = world(0.76)
       const lookAhead = world(1.18)
+      const eyeOffset = world(0.08)
+      const elevationRadians = Math.min(PHYSICS.maximumCueElevation, Math.max(0, elevation)) * Math.PI / 180
+      const elevatedLookAhead = lookAhead * (1 - 0.7 * elevationRadians / (PHYSICS.maximumCueElevation * Math.PI / 180))
       targetPosition.set(
-        world(cue.position.x) - Math.cos(angle) * behind,
-        CLOTH_TOP + world(0.34),
-        world(cue.position.y) - Math.sin(angle) * behind,
+        world(cue.position.x) - Math.cos(angle) * behind - Math.sin(angle) * eyeOffset,
+        CLOTH_TOP + world(0.34) + Math.tan(elevationRadians) * behind * 0.68,
+        world(cue.position.y) - Math.sin(angle) * behind + Math.cos(angle) * eyeOffset,
       )
       lookTarget.set(
-        world(cue.position.x) + Math.cos(angle) * lookAhead,
+        world(cue.position.x) + Math.cos(angle) * elevatedLookAhead,
         CLOTH_TOP + world(0.045),
-        world(cue.position.y) + Math.sin(angle) * lookAhead,
+        world(cue.position.y) + Math.sin(angle) * elevatedLookAhead,
       )
     } else {
       targetPosition.set(...initialPosition)
@@ -249,13 +258,39 @@ function AimSurface({ spec, onAim }: { spec: TableSpec; onAim: (point: Vector3) 
   )
 }
 
-function CueBallSpinTarget({ spin, onSpinSelected }: { spin: Vec2; onSpinSelected: (spin: Vec2) => void }) {
-  function update(event: ReactPointerEvent<HTMLButtonElement>) {
-    event.preventDefault()
+function CueContactTarget({ spec, balls, active, angle, elevation, spin, visible, onSpinSelected }: {
+  spec: TableSpec
+  balls: RefObject<BallState[]>
+  active: RefObject<boolean>
+  angle: number
+  elevation: number
+  spin: Vec2
+  visible: boolean
+  onSpinSelected: (spin: Vec2) => void
+}) {
+  const targetRef = useRef<Group>(null)
+  const markerRef = useRef<Mesh>(null)
+  const ballRadius = world(spec.ballDiameter / 2)
+  const centre = useMemo(() => new Vector3(), [])
+  const side = useMemo(() => new Vector3(), [])
+  const vertical = useMemo(() => new Vector3(), [])
+  const back = useMemo(() => new Vector3(), [])
+  const contactNormal = useMemo(() => new Vector3(), [])
+  const targetMatrix = useMemo(() => new Matrix4(), [])
+  const markerQuaternion = useMemo(() => new Quaternion(), [])
+  const zAxis = useMemo(() => new Vector3(0, 0, 1), [])
+
+  function updateSpin(event: ThreeEvent<PointerEvent>) {
+    const cue = balls.current?.[0]
+    if (!cue) return
     event.stopPropagation()
-    const rect = event.currentTarget.getBoundingClientRect()
-    let x = ((event.clientX - rect.left) / rect.width - 0.5) * 2
-    let y = -((event.clientY - rect.top) / rect.height - 0.5) * 2
+    const geometry = cueContactGeometry(angle, spin, elevation)
+    centre.set(world(cue.position.x), CLOTH_TOP + ballRadius, world(cue.position.y))
+    side.set(geometry.sideDirection.x, geometry.sideDirection.y, geometry.sideDirection.z)
+    vertical.set(geometry.verticalDirection.x, geometry.verticalDirection.y, geometry.verticalDirection.z)
+    const offset = event.point.clone().sub(centre)
+    let x = offset.dot(side) / ballRadius
+    let y = offset.dot(vertical) / ballRadius
     const distance = Math.hypot(x, y)
     if (distance > PHYSICS.maximumTipOffset) {
       const scale = PHYSICS.maximumTipOffset / distance
@@ -265,54 +300,107 @@ function CueBallSpinTarget({ spin, onSpinSelected }: { spin: Vec2; onSpinSelecte
     onSpinSelected({ x, y })
   }
 
+  useFrame(() => {
+    const cue = balls.current?.[0]
+    if (!cue || !targetRef.current || !markerRef.current) return
+    const geometry = cueContactGeometry(angle, spin, elevation)
+    centre.set(world(cue.position.x), CLOTH_TOP + ballRadius, world(cue.position.y))
+    side.set(geometry.sideDirection.x, geometry.sideDirection.y, geometry.sideDirection.z)
+    vertical.set(geometry.verticalDirection.x, geometry.verticalDirection.y, geometry.verticalDirection.z)
+    back.set(-geometry.cueDirection.x, -geometry.cueDirection.y, -geometry.cueDirection.z)
+    contactNormal.set(geometry.contactNormal.x, geometry.contactNormal.y, geometry.contactNormal.z)
+    targetMatrix.makeBasis(side, vertical, back)
+    targetRef.current.position.copy(centre).addScaledVector(back, ballRadius * 1.018)
+    targetRef.current.quaternion.setFromRotationMatrix(targetMatrix)
+    targetRef.current.visible = visible && !active.current
+    markerRef.current.position.copy(centre).addScaledVector(contactNormal, ballRadius * 1.025)
+    markerQuaternion.setFromUnitVectors(zAxis, contactNormal)
+    markerRef.current.quaternion.copy(markerQuaternion)
+    markerRef.current.visible = visible && !active.current
+  })
+
   return (
-    <button
-      type="button"
-      className="cue-ball-spin-target"
-      onPointerDown={(event) => {
-        event.currentTarget.setPointerCapture(event.pointerId)
-        update(event)
-      }}
-      onPointerMove={(event) => {
-        if (event.currentTarget.hasPointerCapture(event.pointerId)) update(event)
-      }}
-      onPointerUp={(event) => {
-        event.stopPropagation()
-        if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
-      }}
-      onPointerCancel={(event) => {
-        event.stopPropagation()
-        if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
-      }}
-      aria-label="수구 위에서 당점 선택"
-    >
-      <i className="axis axis-x" /><i className="axis axis-y" />
-      <span style={{ left: `${50 + spin.x * 50}%`, top: `${50 - spin.y * 50}%` }} />
-      <small>당점 드래그</small>
-    </button>
+    <>
+      <group ref={targetRef}>
+        <mesh
+          onPointerDown={(event) => {
+            event.stopPropagation()
+            event.nativeEvent.stopPropagation()
+            const target = event.target as Element | null
+            target?.setPointerCapture(event.pointerId)
+            document.body.style.cursor = 'grabbing'
+            updateSpin(event)
+          }}
+          onPointerMove={(event) => {
+            if ((event.target as Element | null)?.hasPointerCapture(event.pointerId)) {
+              event.nativeEvent.stopPropagation()
+              updateSpin(event)
+            }
+          }}
+          onPointerUp={(event) => {
+            event.stopPropagation()
+            event.nativeEvent.stopPropagation()
+            const target = event.target as Element | null
+            if (target?.hasPointerCapture(event.pointerId)) target.releasePointerCapture(event.pointerId)
+            document.body.style.cursor = 'crosshair'
+          }}
+          onPointerCancel={(event) => {
+            event.stopPropagation()
+            event.nativeEvent.stopPropagation()
+            const target = event.target as Element | null
+            if (target?.hasPointerCapture(event.pointerId)) target.releasePointerCapture(event.pointerId)
+            document.body.style.cursor = ''
+          }}
+          onPointerEnter={() => { document.body.style.cursor = 'crosshair' }}
+          onPointerLeave={() => { document.body.style.cursor = '' }}
+        >
+          <circleGeometry args={[ballRadius * 0.76, 48]} />
+          <meshBasicMaterial transparent opacity={0.001} depthWrite={false} depthTest={false} side={DoubleSide} />
+        </mesh>
+        <mesh renderOrder={20}>
+          <ringGeometry args={[ballRadius * 0.68, ballRadius * 0.705, 48]} />
+          <meshBasicMaterial color="#ea6955" transparent opacity={0.58} depthWrite={false} depthTest={false} side={DoubleSide} />
+        </mesh>
+        <mesh renderOrder={20}>
+          <planeGeometry args={[ballRadius * 1.12, world(0.0012)]} />
+          <meshBasicMaterial color="#ea6955" transparent opacity={0.32} depthWrite={false} depthTest={false} side={DoubleSide} />
+        </mesh>
+        <mesh renderOrder={20}>
+          <planeGeometry args={[world(0.0012), ballRadius * 1.12]} />
+          <meshBasicMaterial color="#ea6955" transparent opacity={0.32} depthWrite={false} depthTest={false} side={DoubleSide} />
+        </mesh>
+      </group>
+      <mesh ref={markerRef} renderOrder={22}>
+        <ringGeometry args={[ballRadius * 0.105, ballRadius * 0.17, 24]} />
+        <meshBasicMaterial color="#f2c65d" depthWrite={false} depthTest={false} side={DoubleSide} />
+      </mesh>
+    </>
   )
 }
 
-function Cue({ spec, balls, active, angle, visible, manualPull, pullRef }: { spec: TableSpec; balls: RefObject<BallState[]>; active: RefObject<boolean>; angle: number; visible: boolean; manualPull: number; pullRef: RefObject<number> }) {
+function Cue({ spec, balls, active, angle, elevation, spin, visible, manualPull, pullRef }: { spec: TableSpec; balls: RefObject<BallState[]>; active: RefObject<boolean>; angle: number; elevation: number; spin: Vec2; visible: boolean; manualPull: number; pullRef: RefObject<number> }) {
   const ref = useRef<Group>(null)
   const quaternion = useMemo(() => new Quaternion(), [])
   const direction = useMemo(() => new Vector3(), [])
+  const contact = useMemo(() => new Vector3(), [])
+  const centre = useMemo(() => new Vector3(), [])
   const cueLength = world(1.42)
   const ballRadius = world(spec.ballDiameter / 2)
-  const cueOffset = cueLength / 2 + ballRadius + world(0.018)
+  const tipGap = world(0.018)
 
   useFrame(() => {
     if (!ref.current) return
     const cue = balls.current?.[0]
     if (!cue) return
-    direction.set(Math.cos(angle), 0, Math.sin(angle)).normalize()
+    const geometry = cueContactGeometry(angle, spin, elevation)
+    direction.set(geometry.cueDirection.x, geometry.cueDirection.y, geometry.cueDirection.z).normalize()
     quaternion.setFromUnitVectors(new Vector3(0, 1, 0), direction)
     const pull = (pullRef.current ?? 0) + manualPull * MAX_CUE_PULL
-    ref.current.position.set(
-      world(cue.position.x) - Math.cos(angle) * (cueOffset + pull),
-      CLOTH_TOP + ballRadius,
-      world(cue.position.y) - Math.sin(angle) * (cueOffset + pull),
-    )
+    centre.set(world(cue.position.x), CLOTH_TOP + ballRadius, world(cue.position.y))
+    contact.set(geometry.contactNormal.x, geometry.contactNormal.y, geometry.contactNormal.z)
+      .multiplyScalar(ballRadius)
+      .add(centre)
+    ref.current.position.copy(contact).addScaledVector(direction, -(cueLength / 2 + tipGap + pull))
     ref.current.quaternion.copy(quaternion)
     ref.current.visible = visible && !active.current
   })
@@ -331,20 +419,21 @@ function Cue({ spec, balls, active, angle, visible, manualPull, pullRef }: { spe
   )
 }
 
-function AimGuide({ spec, balls, active, angle, visible }: { spec: TableSpec; balls: RefObject<BallState[]>; active: RefObject<boolean>; angle: number; visible: boolean }) {
+function AimGuide({ mode, spec, balls, active, angle, elevation, power, spin, stroke, visible }: { mode: BilliardsMode; spec: TableSpec; balls: RefObject<BallState[]>; active: RefObject<boolean>; angle: number; elevation: number; power: number; spin: Vec2; stroke: StrokeStyle; visible: boolean }) {
   const ref = useRef<Mesh>(null)
   const length = world(spec.playingLength * 0.82)
   const radius = world(spec.ballDiameter / 2)
   useFrame(() => {
     const cue = balls.current?.[0]
     if (!cue || !ref.current) return
+    const launchAngle = shotKinematics(mode, angle, power, spin, stroke, elevation).launchAngle
     ref.current.visible = visible && !active.current
     ref.current.position.set(
-      world(cue.position.x) + Math.cos(angle) * length / 2,
+      world(cue.position.x) + Math.cos(launchAngle) * length / 2,
       CLOTH_TOP + radius + 0.015,
-      world(cue.position.y) + Math.sin(angle) * length / 2,
+      world(cue.position.y) + Math.sin(launchAngle) * length / 2,
     )
-    ref.current.rotation.y = -angle
+    ref.current.rotation.y = -launchAngle
   })
   return (
     <mesh ref={ref}>
@@ -354,13 +443,13 @@ function AimGuide({ spec, balls, active, angle, visible }: { spec: TableSpec; ba
   )
 }
 
-function World({ mode, view, angle, spin, manualPull, onAimSelected, onSpinSelected, onShotStart, onShotLaunched, onShotEnd, controller }: SceneProps & { controller: RefObject<ControllerBridge | null> }) {
+function World({ mode, view, angle, elevation, power, spin, stroke, manualPull, onAimSelected, onSpinSelected, onShotStart, onShotLaunched, onShotEnd, controller }: SceneProps & { controller: RefObject<ControllerBridge | null> }) {
   const spec = getTableSpec(mode)
   const ballRadius = world(spec.ballDiameter / 2)
   const balls = useRef<BallState[]>(createInitialBalls(mode))
   const meshMap = useRef(new Map<string, Mesh>())
-  const cueSpinAnchor = useRef<Group>(null)
   const events = useRef<ShotEvent[]>([])
+  const openingShot = useRef(true)
   const active = useRef(false)
   const [shotActive, setShotActive] = useState(false)
   const restFrames = useRef(0)
@@ -393,6 +482,7 @@ function World({ mode, view, angle, spin, manualPull, onAimSelected, onSpinSelec
       const fresh = createInitialBalls(mode)
       balls.current.forEach((ball, index) => Object.assign(ball, fresh[index]))
       events.current = []
+      openingShot.current = true
       active.current = false
       setShotActive(false)
       animation.current = null
@@ -414,7 +504,7 @@ function World({ mode, view, angle, spin, manualPull, onAimSelected, onSpinSelec
           ? Math.sin((progress / 0.62) * Math.PI * 0.5) * pullDistance
           : Math.max(0, (1 - progress) * pullDistance * 0.34)
       if (progress >= 1) {
-        applyShot(balls.current[0], mode, shot.settings.angle, shot.settings.power, shot.settings.spin, shot.settings.stroke)
+        applyShot(balls.current[0], mode, shot.settings.angle, shot.settings.power, shot.settings.spin, shot.settings.stroke, shot.settings.elevation)
         animation.current = null
         physicsAccumulator.current = 0
         pullRef.current = 0
@@ -442,7 +532,9 @@ function World({ mode, view, angle, spin, manualPull, onAimSelected, onSpinSelec
           setShotActive(false)
           restFrames.current = 0
           const snapshot = [...events.current]
-          onShotEnd(evaluateShot(mode, snapshot), snapshot)
+          const verdict = evaluateShot(mode, snapshot, { openingShot: openingShot.current })
+          openingShot.current = false
+          onShotEnd(verdict, snapshot)
         }
       } else {
         restFrames.current = 0
@@ -453,7 +545,6 @@ function World({ mode, view, angle, spin, manualPull, onAimSelected, onSpinSelec
       const mesh = meshMap.current.get(ball.id)
       if (!mesh) continue
       mesh.position.set(world(ball.position.x), CLOTH_TOP + ballRadius, world(ball.position.y))
-      if (ball.id === 'cue' && cueSpinAnchor.current) cueSpinAnchor.current.position.copy(mesh.position)
       const angularSpeed = Math.hypot(ball.angularVelocity.x, ball.angularVelocity.y, ball.angularVelocity.z)
       if (angularSpeed > 0) {
         rotationAxis.set(ball.angularVelocity.x, ball.angularVelocity.y, ball.angularVelocity.z).normalize()
@@ -465,7 +556,7 @@ function World({ mode, view, angle, spin, manualPull, onAimSelected, onSpinSelec
   const tableLength = world(spec.playingLength)
   return (
     <>
-      <CameraRig mode={mode} view={view} angle={angle} balls={balls} />
+      <CameraRig mode={mode} view={view} angle={angle} elevation={elevation} balls={balls} />
       <ambientLight intensity={view === 'overview' ? 1.35 : 0.95} />
       <hemisphereLight args={['#dfffee', '#07120e', view === 'overview' ? 1.8 : 1.15]} />
       <directionalLight position={[2, 8, 4]} intensity={view === 'overview' ? 3.4 : 2.7} castShadow shadow-mapSize={[1024, 1024]} />
@@ -485,15 +576,9 @@ function World({ mode, view, angle, spin, manualPull, onAimSelected, onSpinSelec
       {renderBalls.map((ball) => (
         <Ball key={ball.id} id={ball.id} color={ball.color} radius={ballRadius} meshRef={(mesh) => { if (mesh) meshMap.current.set(ball.id, mesh) }} />
       ))}
-      <group ref={cueSpinAnchor}>
-        {view === 'aim' && !shotActive && (
-          <Html center zIndexRange={[30, 20]} wrapperClass="cue-spin-html">
-            <CueBallSpinTarget spin={spin} onSpinSelected={onSpinSelected} />
-          </Html>
-        )}
-      </group>
-      <AimGuide spec={spec} balls={balls} active={active} angle={angle} visible={view === 'aim'} />
-      <Cue spec={spec} balls={balls} active={active} angle={angle} visible={view === 'aim'} manualPull={manualPull} pullRef={pullRef} />
+      <CueContactTarget spec={spec} balls={balls} active={active} angle={angle} elevation={elevation} spin={spin} visible={view === 'aim' && !shotActive} onSpinSelected={onSpinSelected} />
+      <AimGuide mode={mode} spec={spec} balls={balls} active={active} angle={angle} elevation={elevation} power={power} spin={spin} stroke={stroke} visible={view === 'aim'} />
+      <Cue spec={spec} balls={balls} active={active} angle={angle} elevation={elevation} spin={spin} visible={view === 'aim'} manualPull={manualPull} pullRef={pullRef} />
       <ContactShadows position={[0, FLOOR_Y + 0.01, 0]} opacity={0.45} scale={tableLength * 1.8} blur={2.5} far={8} />
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, FLOOR_Y, 0]} receiveShadow>
         <planeGeometry args={[45, 45]} /><meshStandardMaterial color="#06100d" roughness={1} />

@@ -6,8 +6,8 @@
 
 ## 게임
 
-- **3쿠션** — 6샷 동안 수구가 두 목적구를 맞히고, 두 번째 목적구 전에 쿠션 3회 이상 접촉하면 1점
-- **한국식 4구** — 6샷 동안 흰 수구로 빨간 목적구 2개를 모두 맞히면 1점, 노란 상대 수구 접촉은 파울
+- **3쿠션** — 5목숨 동안 득점은 계속 누적하고 실패할 때만 목숨 1개 차감. 두 번째 목적구 전 쿠션 3회 이상이면 1점
+- **한국식 4구** — 5목숨 동안 두 빨간 목적구를 모두 맞히면 1점, 노란 상대 수구 접촉은 파울
 - **Classic Yacht** — 5개 주사위, 턴당 최대 3회 롤, 12개 원형 Yacht 카테고리의 합산 점수(최대 297점)
 
 규칙 기준: [UMB Carom rules](https://files.umb-carom.org/Public/Rules/CAROM%20BILLIARD%20RULES.pdf), [대한당구연맹 4구 안내](https://kr.object.ncloudstorage.com/kbfdiv/2025_kbf_division.pdf.pdf), [Classic Yacht scoring](https://en.wikipedia.org/wiki/Yacht_%28dice_game%29).
@@ -24,12 +24,14 @@
 - 공-공 충돌은 충격량 기반으로 반발계수 `0.98`과 접선 마찰을 적용합니다. 공-쿠션은 Mathavan 3D 충돌 방정식을 수치 적분해 압축·복원 단계를 분리하며, 쿠션 노즈 높이, 천과 쿠션에서 동시에 바뀌는 미끄럼 방향, 전진·역·옆회전을 모두 계산합니다. 모델 내부의 에너지 반발계수는 `0.98`, 쿠션 마찰은 `0.14`입니다.
 - 파워는 표시값과 당긴 거리 모두 `0–100%`로 일치하며, 수구 초속은 비선형 곡선으로 약 `0.18–6.2 m/s`입니다. 밀어치기는 회전 전달이 길고, 끊어치기는 속도가 약간 높지만 회전 전달이 짧습니다.
 - 당점은 초크가 미끄러지지 않는 실용 한계인 반지름의 `0.7`까지 제한하며, 옆 당점에는 세기와 당점량에 따른 초기 스쿼트(큐볼 편향)를 적용합니다.
+- 큐는 `0–45°`로 세울 수 있고 실제 3D 공 표면의 당점, 큐 팁 위치, 충격량 방향이 함께 움직입니다. 고각 옆 당점의 스워브는 천 접점 마찰로 점진적으로 발생합니다.
+- 3쿠션은 UMB Scheme A, 4구는 한국식 기본 초구로 시작하며 첫 샷은 반대편 빨간 공을 직접 먼저 맞혀야 합니다.
 - 240 Hz 고정 물리 스텝으로 프레임률과 충돌 결과를 분리했습니다.
 - 마찰 기준은 고속 촬영 실험의 미끄럼 `0.178–0.245`, 구름 `0.0127–0.0129`와 가열된 3쿠션 테이블 실측 보정값 `0.008`을 사용합니다.
 
 물리 참고: [Dynamics in Carom and Three Cushion Billiards](https://doi.org/10.1007/BF02919180), [Application of high-speed imaging to determine the dynamics of billiards](https://doi.org/10.1119/1.3157159), [A theoretical analysis of billiard ball dynamics under cushion impacts](https://doi.org/10.1243/09544062JMES1964), [Motions of a billiard ball after a cue stroke](https://arxiv.org/abs/2104.11232), [Movement Variability of Professional Pool Billiards Players](https://doi.org/10.1016/j.proeng.2015.07.240).
 
-실제 테이블은 천의 마모·온습도·가열 상태·쿠션 고무와 큐의 입사각에 따라 계수가 달라집니다. 이 구현은 명시된 공인 장비와 표준 상태를 결정론적으로 재현합니다. 큐대 승강각이 필요한 점프·마세·스워브는 아직 모델 범위에 포함하지 않습니다. 현재 쿠션 모델은 논문과 같이 쿠션 변형이 작은 법선 속도 약 `2.5 m/s` 이하에서 가장 정확하며, 그 이상의 강한 정면 충돌은 근사값입니다.
+실제 테이블은 천의 마모·온습도·가열 상태·쿠션 고무와 큐의 입사각에 따라 계수가 달라집니다. 이 구현은 명시된 공인 장비와 표준 상태를 결정론적으로 재현합니다. 스쿼트·스워브·고각 마세 성분은 포함하지만 공이 천에서 뜨는 점프 샷은 범위에서 제외합니다. 현재 쿠션 모델은 논문과 같이 쿠션 변형이 작은 법선 속도 약 `2.5 m/s` 이하에서 가장 정확하며, 그 이상의 강한 정면 충돌은 근사값입니다.
 
 ## 로컬 실행
 
@@ -43,11 +45,11 @@ Supabase 환경변수가 없으면 기록은 브라우저 `localStorage`에 저�
 
 ## Supabase 연결
 
-1. Supabase 새 프로젝트의 SQL Editor에서 `supabase/migrations/20260829154000_arcade_leaderboard.sql`을 실행합니다.
-2. Project Settings → API의 URL과 anon key를 `.env`에 입력합니다.
-3. 개발 서버를 다시 시작합니다.
+1. `supabase db push`로 `supabase/migrations` 전체를 적용합니다.
+2. Supabase Auth의 anonymous sign-in을 활성화하고 IP별 생성 제한을 설정합니다.
+3. Project Settings → API의 URL과 anon key를 `.env`에 입력한 뒤 개발 서버를 다시 시작합니다.
 
-이름은 기기별 UUID와 함께 브라우저에 캐시됩니다. DB에는 종목별 최고 점수, 최고 기록 시간, 플레이 횟수만 저장됩니다. 공개 클라이언트 게임이므로 SQL은 점수 범위를 검증하지만 완전한 부정 점수 방지는 서버 검증 리플레이/서명 토큰을 별도로 추가해야 합니다.
+이름은 브라우저에 캐시되고, 클라우드 기록은 화면에 드러나지 않는 Supabase anonymous auth 사용자에 귀속됩니다. 서버 시간 기반 일회성 run, 재사용 차단, 제한/최소 시간 검증을 거쳐 종목별 최고 점수·기록 시간·플레이 횟수만 저장합니다. 공개 순위에는 해시된 player key만 노출됩니다. 다만 완전한 부정 점수 방지는 서버가 Yacht RNG와 당구 샷을 직접 실행·검증하는 추가 구조가 필요합니다.
 
 ## 배포
 

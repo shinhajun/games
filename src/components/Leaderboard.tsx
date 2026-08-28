@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Medal, RefreshCw, Trophy } from 'lucide-react'
 import { getLeaderboard } from '../lib/leaderboard'
 import { GAME_META, type GameCode, type LeaderboardEntry } from '../types'
+import { scoreUnit } from './leaderboardFormat'
 
 function formatDuration(ms: number) {
   const seconds = Math.round(ms / 1000)
@@ -46,7 +47,7 @@ export function Leaderboard({ game, compact = false }: { game: GameCode; compact
             <span className={`rank rank-${index + 1}`}>{index + 1}</span>
             <span className="rank-avatar">{entry.name.slice(0, 1)}</span>
             <span className="rank-name">{entry.name}<small>{entry.playedCount} PLAY{entry.playedCount > 1 ? 'S' : ''}</small></span>
-            <strong>{entry.score}<small>{game === 'yacht' ? ' PTS' : ' / 6'}</small></strong>
+            <strong>{entry.score}<small>{scoreUnit(game)}</small></strong>
             {!compact && <time>{formatDuration(entry.durationMs)}</time>}
           </li>
         ))}

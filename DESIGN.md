@@ -27,7 +27,7 @@ Hajun Arcade is a compact, premium game room: dark green felt, warm brass, preci
 
 ## Information architecture
 
-- **Global app shell:** compact brand/home affordance, game/leaderboard navigation, player/cloud status.
+- **Global app shell:** home and leaderboard only; game routes do not render the global site header or footer.
 - **Game HUD:** back action, game identity, and primary score/turn information.
 - **Playfield:** the largest region; 3D table or dice tray.
 - **Action surface:** direct, persistent controls adjacent to the playfield.
@@ -57,19 +57,22 @@ Hajun Arcade is a compact, premium game room: dark green felt, warm brass, preci
 ### Immersive AppShell
 
 - Adds a `game-shell` route state.
-- Uses `100dvh`, a fixed compact header, a `min-height: 0` main area, hidden footer, and hidden body overflow only while a game route is active.
+- Uses the full `100dvh` without the global header/footer, a `min-height: 0` main area, and hidden body overflow only while a game route is active.
 - Home and leaderboard retain the full header/footer and normal document flow.
 
 ### Play HUD
 
 - Fixed-height top row inside each game.
-- Back action, title, and score/attempt state align horizontally.
+- Back action, title, score, and five-life state align horizontally.
+- A compact `RANKED` / `LOCAL ONLY` status makes cloud-run eligibility visible before the result screen.
 - Secondary eyebrow/title detail may hide in short landscape viewports.
 
 ### Billiards stage and shot rail
 
 - Table consumes all area below the HUD.
-- Shot rail stays directly on the right edge, always visible, with cue-ball point and pull-release stroke controls.
+- Shot rail stays directly on the right edge, always visible, with 0–45° cue elevation, stroke, and pull-release controls.
+- The strike point is a 3D reticle clamped to the physical cue-ball surface; dragging it moves the rendered cue tip and the impact vector together.
+- The launch guide follows the predicted initial ball vector, including the small immediate squirt from side tip offset.
 - Table annotations avoid the rail safe zone.
 
 ### Yacht dice tray
@@ -101,21 +104,21 @@ Hajun Arcade is a compact, premium game room: dark green felt, warm brass, preci
 
 ### Desktop (`> 860px`)
 
-- Game navigation: 58 px target height.
+- No global game navigation; the play surface starts at the viewport top.
 - Play HUD: approximately 68–72 px.
 - Billiards: full-width stage with a 112–126 px right rail overlay.
 - Yacht: playfield/scorecard split around 60/40, with both regions constrained to remaining viewport height.
 
 ### Mobile portrait (`<= 860px`)
 
-- Game navigation: approximately 52–54 px.
+- No global game navigation; a compact icon-only back action stays in the play HUD.
 - Play HUD: approximately 64–68 px.
 - Billiards remains stage-first with the narrow direct rail.
 - Yacht stacks dice/action above the score decision grid; both must fit within the remaining dynamic viewport.
 
 ### Short mobile landscape (`height <= 620px`)
 
-- Game navigation: approximately 42–44 px.
+- No global game navigation.
 - Play HUD: approximately 42–48 px; secondary copy hides.
 - Yacht becomes a left/right split: tray/actions on the left and the 2-column score grid on the right.
 - Safe-area insets are applied without introducing document scroll.
@@ -147,6 +150,12 @@ Hajun Arcade is a compact, premium game room: dark green felt, warm brass, preci
 ## Open questions and current decisions
 
 - **Decision:** only game routes are viewport-locked; home and leaderboard remain scrollable.
+- **Decision:** game routes omit the global site header/footer and retain navigation through the in-game back action.
+- **Decision:** billiards runs start with five lives; scoring preserves lives and only a miss consumes one.
+- **Decision:** 3-cushion uses UMB Scheme A and Korean four-ball uses the near-red opening layout; the first shot must directly attack the far red.
+- **Decision:** ranked submissions use a hidden anonymous-auth identity and server-timed one-use run; local play remains available when ranked setup fails.
+- **Decision:** billiards cue impact derives angular velocity from the 3D contact arm crossed with cue impulse; elevated side hits create progressive cloth-driven swerve instead of a single scripted curve.
+- **Decision:** cue elevation is table-bound from 0–45°; it supports squirt/swerve/massé behavior without enabling an airborne jump-ball state.
 - **Decision:** no new rigid-body dependency. Yacht uses a bounded lightweight impulse simulation for five dice.
 - **Decision:** dense mobile score hints are visually condensed, while full rule text remains in accessible labels.
 - **Decision:** browser verification uses Chrome DevTools Protocol, not Playwright.

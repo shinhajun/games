@@ -5,7 +5,7 @@ import { useProfile } from '../useProfile'
 import { Leaderboard } from '../components/Leaderboard'
 import { DiceScene } from '../game/yacht/DiceScene'
 import { scoreYachtCategory, totalYachtScore, YACHT_CATEGORIES, type YachtCategory } from '../game/yacht/scoring'
-import { submitScore } from '../lib/leaderboard'
+import { prepareCloudLeaderboard, startScoreRun, submitScore } from '../lib/leaderboard'
 import { nowMs } from '../lib/time'
 
 const freshDice = () => [1, 2, 3, 4, 5]
@@ -14,6 +14,9 @@ const ROLL_DURATION_MS = 1480
 export function YachtPage() {
   const { profile } = useProfile()
   const startedAt = useRef(0)
+  const scoreRun = useRef<Promise<string | null> | null>(null)
+  const rollPending = useRef(false)
+  const runGeneration = useRef(0)
   const rollTimer = useRef<number | null>(null)
   const [dice, setDice] = useState(freshDice)
   const [held, setHeld] = useState([false, false, false, false, false])
@@ -23,6 +26,7 @@ export function YachtPage() {
   const [scores, setScores] = useState<Partial<Record<YachtCategory, number>>>({})
   const [finished, setFinished] = useState(false)
   const [saved, setSaved] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [rankedState, setRankedState] = useState<'checking' | 'ready' | 'local'>('checking')
   const total = totalYachtScore(scores)
   const round = Object.keys(scores).length + 1
 
@@ -30,14 +34,49 @@ export function YachtPage() {
     if (rollTimer.current !== null) window.clearTimeout(rollTimer.current)
   }, [])
 
+  useEffect(() => {
+    let cancelled = false
+    void prepareCloudLeaderboard()
+      .then((ready) => { if (!cancelled) setRankedState(ready ? 'ready' : 'local') })
+      .catch(() => { if (!cancelled) setRankedState('local') })
+    return () => { cancelled = true }
+  }, [profile])
+
+  function beginScoreRun() {
+    if (scoreRun.current) return scoreRun.current
+    setRankedState('checking')
+    const attempt = () => startScoreRun('yacht')
+    const run = attempt()
+      .catch(() => new Promise<string | null>((resolve) => {
+        window.setTimeout(() => { void attempt().then(resolve).catch(() => resolve(null)) }, 600)
+      }))
+      .then((runId) => {
+        setRankedState(runId ? 'ready' : 'local')
+        if (!runId) scoreRun.current = null
+        return runId
+      })
+    scoreRun.current = run
+    return run
+  }
+
   function toggleHold(index: number) {
     if (rolls === 0 || rolling) return
     setHeld((current) => current.map((value, currentIndex) => currentIndex === index ? !value : value))
   }
 
-  function roll() {
-    if (rolling || rolls >= 3) return
-    if (startedAt.current === 0) startedAt.current = nowMs()
+  async function roll() {
+    if (rollPending.current || rolling || rolls >= 3) return
+    const generation = runGeneration.current
+    if (startedAt.current === 0) {
+      rollPending.current = true
+      try {
+        if (profile) await beginScoreRun()
+      } finally {
+        rollPending.current = false
+      }
+      if (generation !== runGeneration.current) return
+      startedAt.current = nowMs()
+    }
     setDice((current) => current.map((value, index) => held[index] ? value : Math.floor(Math.random() * 6) + 1))
     setRollNonce((value) => value + 1)
     setRolling(true)
@@ -61,7 +100,8 @@ export function YachtPage() {
       setFinished(true)
       if (profile) {
         setSaved('saving')
-        void submitScore(profile, { game: 'yacht', score: finalScore, durationMs: nowMs() - startedAt.current })
+        const cloudRun = scoreRun.current ?? Promise.resolve(null)
+        void cloudRun.then((runId) => submitScore(profile, { game: 'yacht', score: finalScore, durationMs: nowMs() - startedAt.current }, runId))
           .then(() => setSaved('saved'))
           .catch(() => setSaved('error'))
       }
@@ -71,7 +111,10 @@ export function YachtPage() {
   function restart() {
     if (rollTimer.current !== null) window.clearTimeout(rollTimer.current)
     rollTimer.current = null
+    runGeneration.current += 1
+    rollPending.current = false
     startedAt.current = 0
+    scoreRun.current = null
     setDice(freshDice())
     setHeld([false, false, false, false, false])
     setRolls(0)
@@ -83,8 +126,8 @@ export function YachtPage() {
   return (
     <div className="play-page yacht-page">
       <header className="play-header page-wrap">
-        <Link to="/" className="back-link"><ArrowLeft size={17} /> 게임 선택</Link>
-        <div className="play-title"><span className="eyebrow">YACHT DICE · CLASSIC 12</span><h1>Yacht Dice</h1></div>
+        <Link to="/" className="back-link" aria-label="게임 선택 화면으로"><ArrowLeft size={17} /><span>게임 선택</span></Link>
+        <div className="play-title"><span className="play-eyebrow-row"><span className="eyebrow">YACHT DICE · CLASSIC 12</span><span className={`ranked-state ${rankedState}`}>{rankedState === 'checking' ? 'CONNECTING' : rankedState === 'ready' ? 'RANKED' : 'LOCAL ONLY'}</span></span><h1>Yacht Dice</h1></div>
         <div className="yacht-total"><small>TOTAL SCORE</small><strong>{total}<em>/297</em></strong></div>
       </header>
 
@@ -104,8 +147,8 @@ export function YachtPage() {
                 </button>
               ))}
             </div>
-            <button className="roll-button" onClick={roll} disabled={rolling || rolls >= 3}>
-              {rolling ? <><span className="button-loader" /> ROLLING</> : rolls === 0 ? <><Dice5 /> 주사위 굴리기</> : rolls < 3 ? <><Dice5 /> 다시 굴리기 <small>{3 - rolls} LEFT</small></> : <><Hand /> 점수를 선택하세요</>}
+            <button className="roll-button" onClick={() => { void roll() }} disabled={rolling || rolls >= 3 || (rolls === 0 && rankedState === 'checking')}>
+              {rolls === 0 && rankedState === 'checking' ? <><span className="button-loader" /> RANKED 연결</> : rolling ? <><span className="button-loader" /> ROLLING</> : rolls === 0 ? <><Dice5 /> 주사위 굴리기</> : rolls < 3 ? <><Dice5 /> 다시 굴리기 <small>{3 - rolls} LEFT</small></> : <><Hand /> 점수를 선택하세요</>}
             </button>
             <p><Hand size={14} /> 주사위를 눌러 홀드 · 턴마다 최대 3회</p>
           </div>

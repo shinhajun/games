@@ -4,11 +4,11 @@ import { Leaderboard } from '../components/Leaderboard'
 
 const games = [
   {
-    code: 'three-cushion', number: '01', tag: 'CAROM · 6 SHOTS', title: '3쿠션', subtitle: 'THREE CUSHION',
+    code: 'three-cushion', number: '01', tag: 'CAROM · 5 LIVES', title: '3쿠션', subtitle: 'THREE CUSHION',
     description: '두 목적구와 세 번의 쿠션. 당점, 세기, 스트로크까지 설계하는 정교한 한 큐.', stat: '3 CUSHIONS', color: 'emerald', icon: CircleDot,
   },
   {
-    code: 'four-ball', number: '02', tag: 'K-CAROM · 6 SHOTS', title: '4구', subtitle: 'FOUR BALL',
+    code: 'four-ball', number: '02', tag: 'K-CAROM · 5 LIVES', title: '4구', subtitle: 'FOUR BALL',
     description: '상대 수구를 피해 두 적구를 모두 맞혀라. 단순해 보여도 길은 무수합니다.', stat: '2 RED BALLS', color: 'coral', icon: MousePointer2,
   },
   {

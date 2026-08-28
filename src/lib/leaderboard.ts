@@ -7,6 +7,7 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
 
 export const isCloudConnected = Boolean(supabaseUrl && supabaseKey)
 const supabase = isCloudConnected ? createClient(supabaseUrl!, supabaseKey!) : null
+let cloudIdentityPromise: Promise<boolean> | null = null
 
 function readLocal(): LeaderboardEntry[] {
   try {
@@ -22,7 +23,7 @@ function writeLocal(entries: LeaderboardEntry[]) {
 
 function mapRow(row: Record<string, unknown>): LeaderboardEntry {
   return {
-    playerId: String(row.device_id),
+    playerId: String(row.player_key),
     name: String(row.display_name),
     game: row.game as GameCode,
     score: Number(row.best_score),
@@ -34,14 +35,11 @@ function mapRow(row: Record<string, unknown>): LeaderboardEntry {
 
 export async function getLeaderboard(game: GameCode, limit = 20): Promise<LeaderboardEntry[]> {
   if (supabase) {
-    const { data, error } = await supabase
-      .from('leaderboard_scores')
-      .select('device_id, display_name, game, best_score, best_duration_ms, played_count, updated_at')
-      .eq('game', game)
-      .order('best_score', { ascending: false })
-      .order('best_duration_ms', { ascending: true })
-      .limit(limit)
-    if (!error && data) return data.map((row) => mapRow(row as Record<string, unknown>))
+    const { data, error } = await supabase.rpc('get_arcade_leaderboard', {
+      p_game: game,
+      p_limit: limit,
+    })
+    if (!error && data) return data.map((row: Record<string, unknown>) => mapRow(row))
   }
 
   return readLocal()
@@ -50,7 +48,36 @@ export async function getLeaderboard(game: GameCode, limit = 20): Promise<Leader
     .slice(0, limit)
 }
 
-export async function submitScore(profile: PlayerProfile, run: ScoreSubmission) {
+export async function prepareCloudLeaderboard(): Promise<boolean> {
+  if (!supabase) return false
+  if (cloudIdentityPromise) return cloudIdentityPromise
+  cloudIdentityPromise = (async () => {
+    const { data: sessionData } = await supabase.auth.getSession()
+    if (sessionData.session?.user) return true
+    const { data, error } = await supabase.auth.signInAnonymously()
+    if (error) throw error
+    return Boolean(data.user)
+  })().catch((error: unknown) => {
+    cloudIdentityPromise = null
+    throw error
+  })
+  return cloudIdentityPromise
+}
+
+export async function startScoreRun(game: GameCode): Promise<string | null> {
+  if (!supabase) return null
+  if (!await prepareCloudLeaderboard()) return null
+  const { data, error } = await supabase.rpc('start_arcade_run', {
+    p_game: game,
+  })
+  if (error) {
+    cloudIdentityPromise = null
+    throw error
+  }
+  return typeof data === 'string' ? data : null
+}
+
+export async function submitScore(profile: PlayerProfile, run: ScoreSubmission, runId: string | null = null) {
   const now = new Date().toISOString()
   const entries = readLocal()
   const existing = entries.find((entry) => entry.playerId === profile.id && entry.game === run.game)
@@ -67,12 +94,13 @@ export async function submitScore(profile: PlayerProfile, run: ScoreSubmission) 
   writeLocal([...entries.filter((entry) => !(entry.playerId === profile.id && entry.game === run.game)), next])
 
   if (supabase) {
+    if (!runId) throw new Error('cloud score run was not started')
     const { error } = await supabase.rpc('submit_arcade_score', {
-      p_device_id: profile.id,
       p_display_name: profile.name,
       p_game: run.game,
       p_score: run.score,
       p_duration_ms: Math.max(0, Math.round(run.durationMs)),
+      p_run_id: runId,
     })
     if (error) throw error
   }
