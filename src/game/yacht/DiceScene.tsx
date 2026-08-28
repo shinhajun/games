@@ -114,7 +114,13 @@ export function DiceScene({ values, held, rolling, rollNonce, onToggle }: {
   onToggle: (index: number) => void
 }) {
   return (
-    <Canvas shadows dpr={[1, 1.8]} camera={{ position: [0, 6.7, 7.6], fov: 39, near: 0.1, far: 50 }} gl={{ antialias: true, powerPreference: 'high-performance' }}>
+    <Canvas
+      shadows
+      dpr={[1, 1.5]}
+      camera={{ position: [0, 6.7, 7.6], fov: 39, near: 0.1, far: 50 }}
+      gl={{ antialias: true, powerPreference: 'default' }}
+      fallback={<div className="webgl-fallback">3D 화면을 불러올 수 없습니다. 브라우저의 WebGL 설정을 확인해 주세요.</div>}
+    >
       <color attach="background" args={['#10120f']} />
       <fog attach="fog" args={['#10120f', 10, 23]} />
       <ambientLight intensity={0.8} />

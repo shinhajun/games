@@ -302,7 +302,13 @@ export const BilliardsScene = forwardRef<BilliardsSceneHandle, SceneProps>(funct
   }), [])
 
   return (
-    <Canvas shadows dpr={[1, 1.7]} camera={{ position: [0, 8.2, 6.25], fov: 48, near: 0.1, far: 100 }} gl={{ antialias: true, powerPreference: 'high-performance' }}>
+    <Canvas
+      shadows
+      dpr={[1, 1.5]}
+      camera={{ position: [0, 8.2, 6.25], fov: 48, near: 0.1, far: 100 }}
+      gl={{ antialias: true, powerPreference: 'default' }}
+      fallback={<div className="webgl-fallback">3D 화면을 불러올 수 없습니다. 브라우저의 WebGL 설정을 확인해 주세요.</div>}
+    >
       <color attach="background" args={['#07120e']} />
       <fog attach="fog" args={['#07120e', 10, 28]} />
       <World {...props} controller={controller} />
