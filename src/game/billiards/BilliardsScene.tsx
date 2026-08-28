@@ -1,6 +1,6 @@
-import { ContactShadows, RoundedBox } from '@react-three/drei'
-import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { forwardRef, useImperativeHandle, useLayoutEffect, useMemo, useRef, type RefObject } from 'react'
+import { ContactShadows, Html, RoundedBox } from '@react-three/drei'
+import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
+import { forwardRef, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { Group, Mesh, Quaternion, Vector3 } from 'three'
 import {
   applyShot,
@@ -27,7 +27,7 @@ export interface ShotSettings {
 }
 
 export interface BilliardsSceneHandle {
-  shoot: (settings: ShotSettings) => boolean
+  shoot: (settings: ShotSettings, pull?: number) => boolean
   reset: () => void
 }
 
@@ -35,13 +35,17 @@ interface SceneProps {
   mode: BilliardsMode
   view: 'overview' | 'aim'
   angle: number
+  spin: Vec2
+  manualPull: number
+  onAimSelected: (angle: number) => void
+  onSpinSelected: (spin: Vec2) => void
   onShotStart: () => void
   onShotLaunched: () => void
   onShotEnd: (verdict: ShotVerdict, events: ShotEvent[]) => void
 }
 
 interface ControllerBridge {
-  shoot: (settings: ShotSettings) => boolean
+  shoot: (settings: ShotSettings, pull?: number) => boolean
   reset: () => void
 }
 
@@ -220,7 +224,69 @@ function Ball({ id, color, radius, meshRef }: { id: BallState['id']; color: stri
   )
 }
 
-function Cue({ spec, balls, active, angle, visible, pullRef }: { spec: TableSpec; balls: RefObject<BallState[]>; active: RefObject<boolean>; angle: number; visible: boolean; pullRef: RefObject<number> }) {
+function AimSurface({ spec, onAim }: { spec: TableSpec; onAim: (point: Vector3) => void }) {
+  return (
+    <mesh
+      position={[0, CLOTH_TOP + world(spec.ballDiameter) * 1.2, 0]}
+      rotation={[-Math.PI / 2, 0, 0]}
+      onClick={(event: ThreeEvent<MouseEvent>) => {
+        event.stopPropagation()
+        document.body.style.cursor = ''
+        onAim(event.point)
+      }}
+      onPointerEnter={() => { document.body.style.cursor = 'crosshair' }}
+      onPointerLeave={() => { document.body.style.cursor = '' }}
+    >
+      <planeGeometry args={[world(spec.playingLength), world(spec.playingWidth)]} />
+      <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+    </mesh>
+  )
+}
+
+function CueBallSpinTarget({ spin, onSpinSelected }: { spin: Vec2; onSpinSelected: (spin: Vec2) => void }) {
+  function update(event: ReactPointerEvent<HTMLButtonElement>) {
+    event.preventDefault()
+    event.stopPropagation()
+    const rect = event.currentTarget.getBoundingClientRect()
+    let x = ((event.clientX - rect.left) / rect.width - 0.5) * 2
+    let y = -((event.clientY - rect.top) / rect.height - 0.5) * 2
+    const distance = Math.hypot(x, y)
+    if (distance > 1) {
+      x /= distance
+      y /= distance
+    }
+    onSpinSelected({ x, y })
+  }
+
+  return (
+    <button
+      type="button"
+      className="cue-ball-spin-target"
+      onPointerDown={(event) => {
+        event.currentTarget.setPointerCapture(event.pointerId)
+        update(event)
+      }}
+      onPointerMove={(event) => {
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) update(event)
+      }}
+      onPointerUp={(event) => {
+        event.stopPropagation()
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+      }}
+      onPointerCancel={(event) => {
+        event.stopPropagation()
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+      }}
+      aria-label="수구 위에서 당점 선택"
+    >
+      <i className="axis axis-x" /><i className="axis axis-y" />
+      <span style={{ left: `${50 + spin.x * 38}%`, top: `${50 - spin.y * 38}%` }} />
+      <small>당점 드래그</small>
+    </button>
+  )
+}
+
+function Cue({ spec, balls, active, angle, visible, manualPull, pullRef }: { spec: TableSpec; balls: RefObject<BallState[]>; active: RefObject<boolean>; angle: number; visible: boolean; manualPull: number; pullRef: RefObject<number> }) {
   const ref = useRef<Group>(null)
   const quaternion = useMemo(() => new Quaternion(), [])
   const direction = useMemo(() => new Vector3(), [])
@@ -234,7 +300,7 @@ function Cue({ spec, balls, active, angle, visible, pullRef }: { spec: TableSpec
     if (!cue) return
     direction.set(Math.cos(angle), 0, Math.sin(angle)).normalize()
     quaternion.setFromUnitVectors(new Vector3(0, 1, 0), direction)
-    const pull = pullRef.current ?? 0
+    const pull = (pullRef.current ?? 0) + manualPull * world(0.19)
     ref.current.position.set(
       world(cue.position.x) - Math.cos(angle) * (cueOffset + pull),
       CLOTH_TOP + ballRadius,
@@ -281,18 +347,20 @@ function AimGuide({ spec, balls, active, angle, visible }: { spec: TableSpec; ba
   )
 }
 
-function World({ mode, view, angle, onShotStart, onShotLaunched, onShotEnd, controller }: SceneProps & { controller: RefObject<ControllerBridge | null> }) {
+function World({ mode, view, angle, spin, manualPull, onAimSelected, onSpinSelected, onShotStart, onShotLaunched, onShotEnd, controller }: SceneProps & { controller: RefObject<ControllerBridge | null> }) {
   const spec = getTableSpec(mode)
   const ballRadius = world(spec.ballDiameter / 2)
   const balls = useRef<BallState[]>(createInitialBalls(mode))
   const meshMap = useRef(new Map<string, Mesh>())
+  const cueSpinAnchor = useRef<Group>(null)
   const events = useRef<ShotEvent[]>([])
   const active = useRef(false)
+  const [shotActive, setShotActive] = useState(false)
   const restFrames = useRef(0)
   const physicsAccumulator = useRef(0)
   const pullRef = useRef(0)
   const rotationAxis = useMemo(() => new Vector3(), [])
-  const animation = useRef<{ elapsed: number; duration: number; settings: ShotSettings } | null>(null)
+  const animation = useRef<{ elapsed: number; duration: number; initialPull: number; settings: ShotSettings } | null>(null)
   const renderBalls = mode === 'four-ball'
     ? [
         { id: 'cue' as const, color: '#f7f3e8' }, { id: 'yellow' as const, color: '#f4c94d' },
@@ -303,10 +371,14 @@ function World({ mode, view, angle, onShotStart, onShotLaunched, onShotEnd, cont
       ]
 
   useImperativeHandle(controller, () => ({
-    shoot(settings) {
+    shoot(settings, pull = 0) {
       if (active.current || animation.current) return false
-      const duration = settings.stroke === 'push' ? 0.72 : settings.stroke === 'punch' ? 0.34 : 0.52
-      animation.current = { elapsed: 0, duration, settings }
+      const initialPull = Math.max(0, Math.min(1, pull))
+      const duration = initialPull > 0
+        ? settings.stroke === 'push' ? 0.26 : settings.stroke === 'punch' ? 0.14 : 0.2
+        : settings.stroke === 'push' ? 0.72 : settings.stroke === 'punch' ? 0.34 : 0.52
+      animation.current = { elapsed: 0, duration, initialPull, settings }
+      setShotActive(true)
       onShotStart()
       return true
     },
@@ -315,6 +387,7 @@ function World({ mode, view, angle, onShotStart, onShotLaunched, onShotEnd, cont
       balls.current.forEach((ball, index) => Object.assign(ball, fresh[index]))
       events.current = []
       active.current = false
+      setShotActive(false)
       animation.current = null
       physicsAccumulator.current = 0
       pullRef.current = 0
@@ -328,15 +401,18 @@ function World({ mode, view, angle, onShotStart, onShotLaunched, onShotEnd, cont
       shot.elapsed += Math.min(rawDelta, 0.05)
       const progress = shot.elapsed / shot.duration
       const pullDistance = world(0.19)
-      pullRef.current = progress < 0.62
-        ? Math.sin((progress / 0.62) * Math.PI * 0.5) * pullDistance
-        : Math.max(0, (1 - progress) * pullDistance * 0.34)
+      pullRef.current = shot.initialPull > 0
+        ? Math.pow(Math.max(0, 1 - progress), 2) * shot.initialPull * pullDistance
+        : progress < 0.62
+          ? Math.sin((progress / 0.62) * Math.PI * 0.5) * pullDistance
+          : Math.max(0, (1 - progress) * pullDistance * 0.34)
       if (progress >= 1) {
         applyShot(balls.current[0], mode, shot.settings.angle, shot.settings.power, shot.settings.spin, shot.settings.stroke)
         animation.current = null
         physicsAccumulator.current = 0
         pullRef.current = 0
         active.current = true
+        setShotActive(true)
         events.current = []
         onShotLaunched()
       }
@@ -356,6 +432,7 @@ function World({ mode, view, angle, onShotStart, onShotLaunched, onShotEnd, cont
         restFrames.current += 1
         if (restFrames.current > 8) {
           active.current = false
+          setShotActive(false)
           restFrames.current = 0
           const snapshot = [...events.current]
           onShotEnd(evaluateShot(mode, snapshot), snapshot)
@@ -369,6 +446,7 @@ function World({ mode, view, angle, onShotStart, onShotLaunched, onShotEnd, cont
       const mesh = meshMap.current.get(ball.id)
       if (!mesh) continue
       mesh.position.set(world(ball.position.x), CLOTH_TOP + ballRadius, world(ball.position.y))
+      if (ball.id === 'cue' && cueSpinAnchor.current) cueSpinAnchor.current.position.copy(mesh.position)
       const angularSpeed = Math.hypot(ball.angularVelocity.x, ball.angularVelocity.y, ball.angularVelocity.z)
       if (angularSpeed > 0) {
         rotationAxis.set(ball.angularVelocity.x, ball.angularVelocity.y, ball.angularVelocity.z).normalize()
@@ -385,11 +463,29 @@ function World({ mode, view, angle, onShotStart, onShotLaunched, onShotEnd, cont
       <directionalLight position={[2, 8, 4]} intensity={2.2} castShadow shadow-mapSize={[1024, 1024]} />
       <pointLight position={[-4, 4, -3]} color="#68cbb3" intensity={5} distance={12} />
       <Table spec={spec} />
+      {view === 'overview' && !shotActive && (
+        <AimSurface
+          spec={spec}
+          onAim={(point) => {
+            const cue = balls.current[0]
+            const target = { x: point.x / WORLD_SCALE, y: point.z / WORLD_SCALE }
+            if (Math.hypot(target.x - cue.position.x, target.y - cue.position.y) < spec.ballDiameter) return
+            onAimSelected(Math.atan2(target.y - cue.position.y, target.x - cue.position.x))
+          }}
+        />
+      )}
       {renderBalls.map((ball) => (
         <Ball key={ball.id} id={ball.id} color={ball.color} radius={ballRadius} meshRef={(mesh) => { if (mesh) meshMap.current.set(ball.id, mesh) }} />
       ))}
+      <group ref={cueSpinAnchor}>
+        {view === 'aim' && !shotActive && (
+          <Html center zIndexRange={[30, 20]} wrapperClass="cue-spin-html">
+            <CueBallSpinTarget spin={spin} onSpinSelected={onSpinSelected} />
+          </Html>
+        )}
+      </group>
       <AimGuide spec={spec} balls={balls} active={active} angle={angle} visible={view === 'aim'} />
-      <Cue spec={spec} balls={balls} active={active} angle={angle} visible={view === 'aim'} pullRef={pullRef} />
+      <Cue spec={spec} balls={balls} active={active} angle={angle} visible={view === 'aim'} manualPull={manualPull} pullRef={pullRef} />
       <ContactShadows position={[0, FLOOR_Y + 0.01, 0]} opacity={0.45} scale={tableLength * 1.8} blur={2.5} far={8} />
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, FLOOR_Y, 0]} receiveShadow>
         <planeGeometry args={[45, 45]} /><meshStandardMaterial color="#06100d" roughness={1} />
@@ -404,7 +500,7 @@ export const BilliardsScene = forwardRef<BilliardsSceneHandle, SceneProps>(funct
   const cameraPosition = overviewCamera(spec)
   const fogNear = world(spec.playingLength)
   useImperativeHandle(ref, () => ({
-    shoot: (settings) => controller.current?.shoot(settings) ?? false,
+    shoot: (settings, pull) => controller.current?.shoot(settings, pull) ?? false,
     reset: () => controller.current?.reset(),
   }), [])
 
