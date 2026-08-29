@@ -7,7 +7,7 @@ const saveStateLabel: Record<SaveState, string> = {
   idle: '',
   saving: '기록 저장 중…',
   saved: '최고 기록에 반영했습니다.',
-  error: '서버 저장 실패. 기록을 유지하고 있습니다.',
+  error: '기록 저장에 실패했습니다. 다시 시도해 주세요.',
 }
 
 export function GameResultDialog({

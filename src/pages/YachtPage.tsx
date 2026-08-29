@@ -1,9 +1,9 @@
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { Fragment, useRef, useState } from 'react'
 import { Check, Dice5, Hand } from 'lucide-react'
 import { useProfile } from '../useProfile'
-import { GameHeader, type RankedState } from '../components/GameHeader'
+import { GameHeader } from '../components/GameHeader'
 import { GameResultDialog } from '../components/GameResultDialog'
-import { DICE_ROLL_DURATION_MS, DiceScene } from '../game/yacht/DiceScene'
+import { DiceScene } from '../game/yacht/DiceScene'
 import {
   scoreYachtCategory,
   totalYachtScore,
@@ -14,7 +14,7 @@ import {
   YACHT_UPPER_BONUS_THRESHOLD,
   type YachtCategory,
 } from '../game/yacht/scoring'
-import { prepareCloudLeaderboard, startScoreRun, submitScore } from '../lib/leaderboard'
+import { startScoreRun, submitScore } from '../lib/leaderboard'
 import { nowMs } from '../lib/time'
 import type { ScoreSubmission } from '../types'
 
@@ -26,7 +26,6 @@ export function YachtPage() {
   const pendingScore = useRef<ScoreSubmission | null>(null)
   const rollPending = useRef(false)
   const runGeneration = useRef(0)
-  const rollTimer = useRef<number | null>(null)
   const [dice, setDice] = useState(freshDice)
   const [held, setHeld] = useState([false, false, false, false, false])
   const [rolls, setRolls] = useState(0)
@@ -35,42 +34,16 @@ export function YachtPage() {
   const [scores, setScores] = useState<Partial<Record<YachtCategory, number>>>({})
   const [finished, setFinished] = useState(false)
   const [saved, setSaved] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
-  const [rankedState, setRankedState] = useState<RankedState>('checking')
   const total = totalYachtScore(scores)
   const upperSubtotal = upperYachtSubtotal(scores)
   const upperBonus = upperYachtBonus(scores)
   const round = Object.keys(scores).length + 1
 
-  useEffect(() => () => {
-    if (rollTimer.current !== null) window.clearTimeout(rollTimer.current)
-  }, [])
-
-  useEffect(() => {
-    let cancelled = false
-    void prepareCloudLeaderboard()
-      .then(() => { if (!cancelled) setRankedState('ready') })
-      .catch(() => { if (!cancelled) setRankedState('error') })
-    return () => { cancelled = true }
-  }, [profile])
-
-  function reconnectRanked() {
-    setRankedState('checking')
-    void prepareCloudLeaderboard()
-      .then(() => setRankedState('ready'))
-      .catch(() => setRankedState('error'))
-  }
-
   function beginScoreRun() {
     if (scoreRun.current) return scoreRun.current
-    setRankedState('checking')
     const run = startScoreRun('yacht')
-      .then((runId) => {
-        setRankedState('ready')
-        return runId
-      })
       .catch((error: unknown) => {
         scoreRun.current = null
-        setRankedState('error')
         throw error
       })
     scoreRun.current = run
@@ -97,14 +70,14 @@ export function YachtPage() {
       if (generation !== runGeneration.current) return
       startedAt.current = nowMs()
     }
-    setDice((current) => current.map((value, index) => held[index] ? value : Math.floor(Math.random() * 6) + 1))
-    setRollNonce((value) => value + 1)
     setRolling(true)
-    rollTimer.current = window.setTimeout(() => {
-      setRolling(false)
-      setRolls((value) => value + 1)
-      rollTimer.current = null
-    }, DICE_ROLL_DURATION_MS)
+    setRollNonce((value) => value + 1)
+  }
+
+  function completePhysicalRoll(nextDice: number[]) {
+    setDice(nextDice)
+    setRolling(false)
+    setRolls((value) => value + 1)
   }
 
   function chooseCategory(category: YachtCategory) {
@@ -138,8 +111,6 @@ export function YachtPage() {
 
   function restart() {
     if (saved === 'saving' || saved === 'error') return
-    if (rollTimer.current !== null) window.clearTimeout(rollTimer.current)
-    rollTimer.current = null
     runGeneration.current += 1
     rollPending.current = false
     startedAt.current = 0
@@ -155,14 +126,14 @@ export function YachtPage() {
 
   return (
     <div className="play-page yacht-page">
-      <GameHeader title="Yacht Dice" rankedState={rankedState} onRetry={reconnectRanked}>
+      <GameHeader title="Yacht Dice">
         <div className="yacht-total"><small>총점</small><strong>{total}<em>/{YACHT_MAX_SCORE}</em></strong></div>
       </GameHeader>
 
       <section className="yacht-layout page-wrap">
         <div className="dice-column">
           <div className="dice-stage">
-            <DiceScene values={dice} held={held} rolling={rolling} rollNonce={rollNonce} onToggle={toggleHold} />
+            <DiceScene values={dice} held={held} rolling={rolling} rollNonce={rollNonce} onToggle={toggleHold} onRollComplete={completePhysicalRoll} />
             <div className="dice-stage-label">라운드 {Math.min(round, YACHT_CATEGORIES.length)}<span>/{YACHT_CATEGORIES.length}</span></div>
             <div className="roll-indicator">{[1, 2, 3].map((roll) => <i className={roll <= rolls ? 'used' : ''} key={roll}>{roll}</i>)}</div>
           </div>
@@ -175,8 +146,8 @@ export function YachtPage() {
                 </button>
               ))}
             </div>
-            <button className="roll-button" onClick={() => { void roll() }} disabled={rolling || rolls >= 3 || (rolls === 0 && rankedState !== 'ready')}>
-              {rolls === 0 && rankedState === 'checking' ? <><span className="button-loader" /> 순위 연결 중</> : rolls === 0 && rankedState === 'error' ? <>서버 재연결 필요</> : rolling ? <><span className="button-loader" /> 굴리는 중</> : rolls === 0 ? <><Dice5 /> 주사위 굴리기</> : rolls < 3 ? <><Dice5 /> 다시 굴리기 <small>{3 - rolls}회 남음</small></> : <><Hand /> 점수를 선택하세요</>}
+            <button className="roll-button" onClick={() => { void roll() }} disabled={rolling || rolls >= 3}>
+              {rolling ? <><span className="button-loader" /> 굴리는 중</> : rolls === 0 ? <><Dice5 /> 주사위 굴리기</> : rolls < 3 ? <><Dice5 /> 다시 굴리기 <small>{3 - rolls}회 남음</small></> : <><Hand /> 점수를 선택하세요</>}
             </button>
           </div>
         </div>

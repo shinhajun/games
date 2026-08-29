@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type WheelEvent } from 'react'
 import { Check, ChevronsDown, Eye, Heart, X } from 'lucide-react'
 import { useProfile } from '../useProfile'
-import { GameHeader, type RankedState } from '../components/GameHeader'
+import { GameHeader } from '../components/GameHeader'
 import { GameResultDialog } from '../components/GameResultDialog'
 import { CueElevationControl } from '../components/CueElevationControl'
 import {
@@ -19,7 +19,7 @@ import {
 } from '../game/billiards/controls'
 import { PHYSICS, type BilliardsMode, type ShotVerdict, type Vec2 } from '../game/billiards/engine'
 import { BILLIARDS_STARTING_LIVES, settleBilliardsShot } from '../game/billiards/run'
-import { prepareCloudLeaderboard, startScoreRun, submitScore } from '../lib/leaderboard'
+import { startScoreRun, submitScore } from '../lib/leaderboard'
 import { nowMs } from '../lib/time'
 import type { ScoreSubmission } from '../types'
 
@@ -79,38 +79,16 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
   const [lastVerdict, setLastVerdict] = useState<ShotVerdict | null>(null)
   const [finished, setFinished] = useState(false)
   const [saved, setSaved] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
-  const [rankedState, setRankedState] = useState<RankedState>('checking')
 
   useEffect(() => () => {
     if (finishTimer.current !== null) window.clearTimeout(finishTimer.current)
   }, [])
 
-  useEffect(() => {
-    let cancelled = false
-    void prepareCloudLeaderboard()
-      .then(() => { if (!cancelled) setRankedState('ready') })
-      .catch(() => { if (!cancelled) setRankedState('error') })
-    return () => { cancelled = true }
-  }, [profile])
-
-  function reconnectRanked() {
-    setRankedState('checking')
-    void prepareCloudLeaderboard()
-      .then(() => setRankedState('ready'))
-      .catch(() => setRankedState('error'))
-  }
-
   function beginScoreRun() {
     if (scoreRun.current) return scoreRun.current
-    setRankedState('checking')
     const run = startScoreRun(mode)
-      .then((runId) => {
-        setRankedState('ready')
-        return runId
-      })
       .catch((error: unknown) => {
         scoreRun.current = null
-        setRankedState('error')
         throw error
       })
     scoreRun.current = run
@@ -301,7 +279,7 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
 
   return (
     <div className="play-page billiards-page">
-      <GameHeader title={gameTitle[mode]} rankedState={rankedState} onRetry={reconnectRanked}>
+      <GameHeader title={gameTitle[mode]}>
         <div className="shot-score" aria-label={`현재 점수 ${score}점, 남은 목숨 ${lives}개`}>
           <span><small>점수</small><strong>{score}</strong></span>
           <div className="life-dots" aria-hidden="true">
@@ -411,7 +389,7 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
               onPointerUp={(event) => endCuePull(event)}
               onPointerCancel={(event) => endCuePull(event, true)}
               onKeyDown={keyCuePull}
-              disabled={view !== 'aim' || shooting || lives <= 0 || rankedState !== 'ready'}
+              disabled={view !== 'aim' || shooting || lives <= 0}
               role="slider"
               aria-orientation="vertical"
               aria-valuemin={0}

@@ -67,7 +67,7 @@ export function Leaderboard({ game, compact = false }: { game: GameCode; compact
       </header>
       <ol className="score-list">
         {!loading && failed && (
-          <li className="error-score"><CloudOff size={19} /> 순위 서버 연결에 실패했습니다.</li>
+          <li className="error-score"><CloudOff size={19} /> 순위 기록을 불러오지 못했습니다.</li>
         )}
         {!loading && !failed && entries.length === 0 && (
           <li className="empty-score"><Medal size={19} /> 첫 기록의 주인공이 되어보세요.</li>

@@ -5,29 +5,21 @@ import { GameHeader } from './GameHeader'
 import { GameResultDialog } from './GameResultDialog'
 
 describe('shared game chrome', () => {
-  it('keeps the game exit, title, ranked state, and primary game status in one header', () => {
+  it('keeps only the game exit, title, and primary game status in the game header', () => {
     const html = renderToStaticMarkup(
       <MemoryRouter>
-        <GameHeader title="3쿠션" rankedState="ready"><div>5 lives</div></GameHeader>
+        <GameHeader title="3쿠션"><div>5 lives</div></GameHeader>
       </MemoryRouter>,
     )
 
     expect(html).toContain('게임 선택 화면으로')
     expect(html).toContain('<h1>3쿠션</h1>')
-    expect(html).toContain('>순위</span>')
     expect(html).toContain('5 lives')
     expect(html).not.toContain('RANKED')
-  })
-
-  it('offers server reconnection instead of pretending failed ranked play is local', () => {
-    const html = renderToStaticMarkup(
-      <MemoryRouter>
-        <GameHeader title="4구" rankedState="error" onRetry={() => undefined}><div>5 lives</div></GameHeader>
-      </MemoryRouter>,
-    )
-
-    expect(html).toContain('순위 서버 재연결')
-    expect(html).toContain('>재연결</button>')
+    expect(html).not.toContain('LIVE')
+    expect(html).not.toContain('CONNECT')
+    expect(html).not.toContain('RETRY')
+    expect(html).not.toContain('재연결')
     expect(html).not.toContain('로컬')
   })
 
@@ -69,7 +61,7 @@ describe('shared game chrome', () => {
       </MemoryRouter>,
     )
 
-    expect(html).toContain('서버 저장 실패')
+    expect(html).toContain('기록 저장에 실패')
     expect(html).toContain('저장 재시도')
     expect(html).not.toContain('로컬')
   })
