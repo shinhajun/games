@@ -1,7 +1,7 @@
 import { ContactShadows, RoundedBox } from '@react-three/drei'
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { forwardRef, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react'
-import { DoubleSide, Group, Matrix4, Mesh, Quaternion, Vector3 } from 'three'
+import { DoubleSide, Group, Matrix4, Mesh, PerspectiveCamera, Quaternion, Vector3 } from 'three'
 import {
   applyShot,
   areBallsStopped,
@@ -99,20 +99,23 @@ function CameraRig({ mode, view, angle, elevation, balls }: { mode: BilliardsMod
     const cue = balls.current?.find((ball) => ball.id === 'cue')
     if (!cue) return
     const smoothing = 1 - Math.exp(-delta * 5.5)
+    const compactAim = size.width <= 520 || size.height <= 680
     if (view === 'aim') {
-      const behind = world(0.76)
-      const lookAhead = world(1.18)
-      const eyeOffset = world(0.08)
+      const behind = world(compactAim ? 0.48 : 0.62)
+      const lookAhead = world(compactAim ? 0.2 : 0.42)
+      const eyeHeight = world(compactAim ? 0.22 : 0.28)
+      const ballRadius = world(spec.ballDiameter / 2)
       const elevationRadians = Math.min(PHYSICS.maximumCueElevation, Math.max(0, elevation)) * Math.PI / 180
-      const elevatedLookAhead = lookAhead * (1 - 0.7 * elevationRadians / (PHYSICS.maximumCueElevation * Math.PI / 180))
+      const elevatedLookAhead = lookAhead * (1 - 0.72 * elevationRadians / (PHYSICS.maximumCueElevation * Math.PI / 180))
+      const raisedCueHeight = Math.tan(elevationRadians) * behind
       targetPosition.set(
-        world(cue.position.x) - Math.cos(angle) * behind - Math.sin(angle) * eyeOffset,
-        CLOTH_TOP + world(0.34) + Math.tan(elevationRadians) * behind * 0.68,
-        world(cue.position.y) - Math.sin(angle) * behind + Math.cos(angle) * eyeOffset,
+        world(cue.position.x) - Math.cos(angle) * behind,
+        CLOTH_TOP + ballRadius + raisedCueHeight + eyeHeight,
+        world(cue.position.y) - Math.sin(angle) * behind,
       )
       lookTarget.set(
         world(cue.position.x) + Math.cos(angle) * elevatedLookAhead,
-        CLOTH_TOP + world(0.045),
+        CLOTH_TOP + ballRadius,
         world(cue.position.y) + Math.sin(angle) * elevatedLookAhead,
       )
     } else {
@@ -121,6 +124,12 @@ function CameraRig({ mode, view, angle, elevation, balls }: { mode: BilliardsMod
     }
     camera.position.lerp(targetPosition, smoothing)
     smoothedLookTarget.lerp(lookTarget, smoothing)
+    if (camera instanceof PerspectiveCamera) {
+      const targetFov = view === 'aim' ? (compactAim ? 39 : 43) : 48
+      const targetFocalLength = 0.5 * camera.getFilmHeight() / Math.tan(targetFov * Math.PI / 360)
+      const focalLength = camera.getFocalLength()
+      camera.setFocalLength(focalLength + (targetFocalLength - focalLength) * smoothing)
+    }
     camera.lookAt(smoothedLookTarget)
     camera.updateProjectionMatrix()
   })

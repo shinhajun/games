@@ -119,6 +119,33 @@ describe('regulation equipment and rigid-body physics', () => {
     )
   })
 
+  it('keeps player-right english physically signed through launch and a head-on cushion', () => {
+    const spec = getTableSpec('three-cushion')
+    const rightEnglish = createInitialBalls('three-cushion')[0]
+    const leftEnglish = createInitialBalls('three-cushion')[0]
+
+    applyShot(rightEnglish, 'three-cushion', 0, 60, { x: 0.5, y: 0 }, 'normal')
+    applyShot(leftEnglish, 'three-cushion', 0, 60, { x: -0.5, y: 0 }, 'normal')
+
+    expect(rightEnglish.angularVelocity.y).toBeGreaterThan(0)
+    expect(leftEnglish.angularVelocity.y).toBeLessThan(0)
+    expect(rightEnglish.velocity.y).toBeLessThan(0)
+    expect(leftEnglish.velocity.y).toBeGreaterThan(0)
+
+    rightEnglish.position = { x: spec.playingLength / 2 - spec.ballDiameter / 2 - 0.001, y: 0 }
+    leftEnglish.position = { x: spec.playingLength / 2 - spec.ballDiameter / 2 - 0.001, y: 0 }
+    rightEnglish.velocity = { x: 1, y: 0 }
+    leftEnglish.velocity = { x: 1, y: 0 }
+
+    stepPhysics([rightEnglish], 'three-cushion', 1 / 120, () => undefined)
+    stepPhysics([leftEnglish], 'three-cushion', 1 / 120, () => undefined)
+
+    expect(rightEnglish.velocity.x).toBeLessThan(0)
+    expect(leftEnglish.velocity.x).toBeLessThan(0)
+    expect(rightEnglish.velocity.y).toBeGreaterThan(0)
+    expect(leftEnglish.velocity.y).toBeLessThan(0)
+  })
+
   it('keeps the 3D cue contact point on the ball surface at every allowed elevation', () => {
     const geometry = cueContactGeometry(Math.PI / 5, { x: 0.52, y: -0.31 }, 32)
     const length = Math.hypot(geometry.contactNormal.x, geometry.contactNormal.y, geometry.contactNormal.z)
