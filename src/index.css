@@ -230,3 +230,59 @@ html:has(.game-shell),
   .game-shell .yacht-page .score-bonus-row{padding-inline:5px}
   .game-shell .yacht-page .score-bonus-row strong{font-size:7px}
 }
+
+/* Yacht score selection is always two-step; mobile opens the scorecard as a full-size panel. */
+.scorecard-toggle,.scorecard-close,.scorecard-backdrop{display:none}
+.game-shell .yacht-page .scorecard>header>div{min-width:0;display:flex;flex-direction:column;gap:5px}
+.game-shell .yacht-page .scorecard>header small{color:var(--faint);font-size:8px}
+.game-shell .yacht-page .scorecard.has-pending{grid-template-rows:52px 25px minmax(0,1fr) 68px}
+.game-shell .yacht-page .score-rows button.selected{background:rgba(242,198,93,.1);box-shadow:inset 3px 0 var(--amber)}
+.score-confirm{min-width:0;padding:8px 10px;display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:7px;border-top:1px solid rgba(242,198,93,.28);background:#13231c}
+.score-confirm>div{min-width:0;display:flex;flex-direction:column;gap:5px}.score-confirm>div small{color:var(--faint);font-size:7px}.score-confirm>div strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}.score-confirm>div em{margin-left:5px;color:var(--amber);font:500 14px/1 var(--mono)}
+.score-confirm button{height:38px;padding:0 12px;border:1px solid var(--line);font-size:9px;font-weight:800}.score-confirm-cancel{color:var(--muted);background:transparent}.score-confirm-submit{border-color:var(--amber)!important;color:#10120f;background:var(--amber)}
+
+@media(max-width:860px){
+  .game-shell .yacht-layout{grid-template-rows:minmax(0,1fr)}
+  .game-shell .yacht-page .dice-controls{grid-template-columns:minmax(0,1fr) 92px;grid-template-rows:33px 42px}
+  .game-shell .yacht-page .hold-buttons{grid-column:1/-1;grid-row:1}
+  .game-shell .yacht-page .hold-buttons button{height:33px}
+  .game-shell .yacht-page .roll-button{grid-column:1;grid-row:2;height:42px}
+  .scorecard-toggle{min-width:0;height:42px;padding:0 7px;border:1px solid rgba(242,198,93,.34);color:var(--amber);background:rgba(242,198,93,.07);display:flex;align-items:center;justify-content:center;gap:5px;font-size:9px;font-weight:800}
+  .scorecard-toggle svg{width:14px}.scorecard-toggle small{color:var(--faint);font:500 7px/1 var(--mono)}
+  .game-shell .yacht-page .scorecard-toggle{grid-column:2;grid-row:2}
+  .scorecard-backdrop{position:fixed;inset:var(--game-hud-h) 0 0;z-index:119;width:100%;border:0;background:rgba(2,7,5,.72);opacity:0;visibility:hidden;display:block;pointer-events:none;transition:opacity .2s,visibility .2s}
+  .scorecard-backdrop.open{opacity:1;visibility:visible;pointer-events:auto}
+  .game-shell .yacht-page .scorecard{position:fixed;z-index:120;left:6px;right:6px;top:calc(var(--game-hud-h) + 4px);bottom:max(6px,env(safe-area-inset-bottom));width:auto;height:auto;min-height:0;overflow:hidden;grid-template-rows:50px minmax(0,1fr);transform:translateY(calc(100% + 12px));visibility:hidden;pointer-events:none;transition:transform .22s ease,visibility .22s}
+  .game-shell .yacht-page .scorecard.open{transform:translateY(0);visibility:visible;pointer-events:auto}
+  .game-shell .yacht-page .scorecard.has-pending{grid-template-rows:50px minmax(0,1fr) 72px}
+  .game-shell .yacht-page .scorecard>header{min-height:0;padding:8px 12px;justify-content:space-between;gap:12px}
+  .game-shell .yacht-page .scorecard>header h2{font-size:17px}.game-shell .yacht-page .scorecard>header small{font-size:9px}
+  .scorecard-close{width:32px;height:32px;flex:0 0 auto;padding:0;border:1px solid var(--line);border-radius:50%;color:var(--muted);background:transparent;display:grid;place-items:center}.scorecard-close svg{width:16px}
+  .game-shell .yacht-page .scorecard-labels{display:none}
+  .game-shell .yacht-page .score-rows{padding:6px;overflow:hidden;grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(8,minmax(0,1fr));gap:4px}
+  .game-shell .yacht-page .score-rows button{min-width:0;height:100%;padding:0 9px;border:1px solid var(--line);grid-template-columns:minmax(0,1fr) 36px;gap:6px}
+  .game-shell .yacht-page .score-rows .category-index,.game-shell .yacht-page .score-rows small{display:none}
+  .game-shell .yacht-page .score-rows strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
+  .game-shell .yacht-page .score-rows em{font-size:14px}
+  .game-shell .yacht-page .score-rows button.max-candidate:not(.locked) em{width:30px;height:30px}
+  .game-shell .yacht-page .score-rows button.selected{border-color:var(--amber);background:rgba(242,198,93,.12);box-shadow:inset 3px 0 var(--amber)}
+  .game-shell .yacht-page .score-bonus-row{min-width:0;height:100%;padding:0 9px;border:1px solid rgba(242,198,93,.26);grid-template-columns:minmax(0,1fr) 36px;gap:6px}
+  .game-shell .yacht-page .score-bonus-row .category-index,.game-shell .yacht-page .score-bonus-row small{display:none}
+  .game-shell .yacht-page .score-bonus-row strong{font-size:11px}.game-shell .yacht-page .score-bonus-row em{font-size:10px}
+  .score-confirm{padding:8px;grid-template-columns:minmax(0,1fr) 48px 102px;gap:5px}.score-confirm button{height:42px;padding:0 6px;font-size:8px}
+}
+
+@media(max-width:860px) and (max-height:620px) and (orientation:portrait){
+  .game-shell .yacht-layout{grid-template-rows:minmax(0,1fr)}
+  .game-shell .yacht-page .dice-controls{grid-template-rows:28px 37px}
+  .game-shell .yacht-page .hold-buttons button{height:28px}
+  .game-shell .yacht-page .roll-button,.scorecard-toggle{height:37px}
+}
+
+@media(max-width:860px) and (max-height:620px) and (orientation:landscape){
+  .game-shell .yacht-layout{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
+  .game-shell .yacht-page .dice-controls{grid-template-columns:minmax(0,1fr) 126px 88px;grid-template-rows:41px}
+  .game-shell .yacht-page .hold-buttons{grid-column:1;grid-row:1}.game-shell .yacht-page .hold-buttons button{height:41px}
+  .game-shell .yacht-page .roll-button{grid-column:2;grid-row:1;height:41px}.game-shell .yacht-page .scorecard-toggle{grid-column:3;grid-row:1;height:41px}
+  .game-shell .yacht-page .score-rows{grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:repeat(4,minmax(0,1fr))}
+}

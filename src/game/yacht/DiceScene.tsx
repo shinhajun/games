@@ -1,7 +1,7 @@
 import { ContactShadows, RoundedBox } from '@react-three/drei'
-import { Canvas, useFrame } from '@react-three/fiber'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import RAPIER, { type RigidBody, type World } from '@dimforge/rapier3d-compat'
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import { Group, Quaternion } from 'three'
 import { quaternionForTopFace, topFaceFromQuaternion } from './dicePhysics'
 
@@ -26,6 +26,8 @@ const MAX_ROLL_TIME = 6
 const REQUIRED_STABLE_TIME = 0.32
 const LINEAR_STABLE_SPEED_SQUARED = 0.018
 const ANGULAR_STABLE_SPEED_SQUARED = 0.12
+const CONTAINMENT_WALL_HALF_HEIGHT = 1.3
+const CONTAINMENT_WALL_CENTER_Y = FELT_TOP_Y + CONTAINMENT_WALL_HALF_HEIGHT
 const FREE_REST_SLOTS: [number, number][] = [
   [-2.25, 0.38],
   [-1.12, -0.12],
@@ -89,7 +91,7 @@ function entropySeed() {
 }
 
 function heldRestPosition(index: number) {
-  return { x: (index - 2) * 1.15, y: REST_CENTER_Y, z: -0.98 }
+  return { x: (index - 2) * 0.04, y: -5, z: 0 }
 }
 
 function freeRestPosition(index: number) {
@@ -126,25 +128,25 @@ function createPhysicsState(values: number[], held: boolean[]): DicePhysicsState
       .setRestitution(0.18),
   )
 
-  const longRail = RAPIER.ColliderDesc.cuboid(4.31, 0.25, 0.175)
+  const longRail = RAPIER.ColliderDesc.cuboid(4.31, CONTAINMENT_WALL_HALF_HEIGHT, 0.175)
     .setFriction(0.46)
     .setRestitution(0.3)
-  world.createCollider(longRail.setTranslation(0, 0.19, -1.91))
+  world.createCollider(longRail.setTranslation(0, CONTAINMENT_WALL_CENTER_Y, -1.91))
   world.createCollider(
-    RAPIER.ColliderDesc.cuboid(4.31, 0.25, 0.175)
-      .setTranslation(0, 0.19, 1.91)
+    RAPIER.ColliderDesc.cuboid(4.31, CONTAINMENT_WALL_HALF_HEIGHT, 0.175)
+      .setTranslation(0, CONTAINMENT_WALL_CENTER_Y, 1.91)
       .setFriction(0.46)
       .setRestitution(0.3),
   )
   world.createCollider(
-    RAPIER.ColliderDesc.cuboid(0.175, 0.25, 1.74)
-      .setTranslation(-4.14, 0.19, 0)
+    RAPIER.ColliderDesc.cuboid(0.175, CONTAINMENT_WALL_HALF_HEIGHT, 1.74)
+      .setTranslation(-4.14, CONTAINMENT_WALL_CENTER_Y, 0)
       .setFriction(0.46)
       .setRestitution(0.3),
   )
   world.createCollider(
-    RAPIER.ColliderDesc.cuboid(0.175, 0.25, 1.74)
-      .setTranslation(4.14, 0.19, 0)
+    RAPIER.ColliderDesc.cuboid(0.175, CONTAINMENT_WALL_HALF_HEIGHT, 1.74)
+      .setTranslation(4.14, CONTAINMENT_WALL_CENTER_Y, 0)
       .setFriction(0.46)
       .setRestitution(0.3),
   )
@@ -241,26 +243,20 @@ function launchPhysicsRoll(
   })
 }
 
-function DieVisual({ held }: { held: boolean }) {
+function DieVisual() {
   return (
     <>
       <RoundedBox args={[1, 1, 1]} radius={0.145} smoothness={6} castShadow receiveShadow>
         <meshPhysicalMaterial
-          color={held ? '#f2c65d' : '#f4f0e7'}
-          roughness={held ? 0.32 : 0.26}
+          color="#f4f0e7"
+          roughness={0.26}
           clearcoat={0.72}
           clearcoatRoughness={0.2}
           sheen={0.16}
-          sheenColor={held ? '#7b5a18' : '#ffffff'}
+          sheenColor="#ffffff"
         />
       </RoundedBox>
       <PipFaces />
-      {held && (
-        <mesh position={[0, -0.505, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[0.49, 0.59, 48]} />
-          <meshBasicMaterial color="#f2c65d" transparent opacity={0.74} />
-        </mesh>
-      )}
     </>
   )
 }
@@ -401,11 +397,12 @@ function DiceBodies({ values, held, rolling, rollNonce, onToggle, onRollComplete
       key={index}
       ref={(node) => { groups.current[index] = node }}
       position={[FREE_REST_SLOTS[index][0], REST_CENTER_Y, FREE_REST_SLOTS[index][1]]}
+      visible={!held[index]}
       onClick={(event) => { event.stopPropagation(); onToggle(index) }}
       onPointerEnter={(event) => { event.stopPropagation(); document.body.style.cursor = 'pointer' }}
       onPointerLeave={() => { document.body.style.cursor = '' }}
     >
-      <DieVisual held={held[index]} />
+      <DieVisual />
     </group>
   ))
 }
@@ -442,6 +439,20 @@ function DiceTray() {
   )
 }
 
+function ResponsiveCamera() {
+  const { camera, size } = useThree()
+
+  useLayoutEffect(() => {
+    const aspect = size.width / Math.max(size.height, 1)
+    const distanceScale = Math.max(1, Math.min(1.75, 0.96 / aspect))
+    camera.position.set(0, 0.15 + 6.5 * distanceScale, 7.55 * distanceScale)
+    camera.lookAt(0, 0.15, 0)
+    camera.updateProjectionMatrix()
+  }, [camera, size.height, size.width])
+
+  return null
+}
+
 export function DiceScene({ values, held, rolling, rollNonce, onToggle, onRollComplete }: {
   values: number[]
   held: boolean[]
@@ -464,6 +475,7 @@ export function DiceScene({ values, held, rolling, rollNonce, onToggle, onRollCo
       <directionalLight castShadow position={[-3.5, 7.5, 4.8]} intensity={3.15} shadow-intensity={0.3} shadow-mapSize={[768, 768]} shadow-bias={-0.00035} />
       <pointLight position={[4.2, 3.2, -2.3]} intensity={5.8} distance={11} color="#f3c96a" />
       <pointLight position={[-4.2, 2.5, 1.6]} intensity={3.8} distance={10} color="#66d8ac" />
+      <ResponsiveCamera />
       <DiceTray />
       <DiceBodies
         values={values}
