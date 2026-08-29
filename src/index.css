@@ -30,6 +30,14 @@
 body:has(.game-shell),
 html:has(.game-shell),
 #root:has(.game-shell){height:100dvh;min-height:0;overflow:hidden;overscroll-behavior:none}
+.game-shell,
+.game-shell *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-user-drag:none}
+.game-shell button,
+.game-shell a{touch-action:manipulation}
+.game-shell .table-stage,
+.game-shell .dice-stage,
+.game-shell .rail-cue-pull,
+.game-shell input[type=range]{touch-action:none}
 .game-shell{--game-hud-h:70px;height:100dvh;min-height:0;overflow:hidden}
 .game-shell>main{height:100dvh;min-height:0;overflow:hidden}
 .game-shell .play-page{height:100%;min-height:0;overflow:hidden;display:grid;grid-template-rows:var(--game-hud-h) minmax(0,1fr)}
