@@ -18,6 +18,7 @@ Hajun Arcade is a compact, premium game room: dark green felt, warm brass, preci
 3. Preserve accurate carom controls and scoring while reducing configuration-panel friction.
 4. Make Yacht dice communicate weight through gravity, wall/floor contact, bounce, angular momentum, and a readable final face.
 5. Maintain fast rendering and stable WebGL contexts on mobile devices.
+6. Make the home route a direct game launcher: all three games and leaderboard access must be obvious without promotional scrolling.
 
 ## Personas and jobs
 
@@ -28,6 +29,7 @@ Hajun Arcade is a compact, premium game room: dark green felt, warm brass, preci
 ## Information architecture
 
 - **Global app shell:** home and leaderboard only; game routes do not render the global site header or footer.
+- **Home:** compact identity row, three primary game choices, then the three live top-five boards. No marketing hero or decorative showcase section.
 - **Game HUD:** back action, game identity, and primary score/turn information.
 - **Playfield:** the largest region; 3D table or dice tray.
 - **Action surface:** direct, persistent controls adjacent to the playfield.
@@ -42,6 +44,7 @@ Hajun Arcade is a compact, premium game room: dark green felt, warm brass, preci
 4. **State over decoration.** Rolls, holds, candidates, power, and score receive stronger contrast than explanatory copy.
 5. **Stable geometry.** UI must not jump when state changes, animation completes, or mobile browser bars resize.
 6. **Touch-safe density.** Compact controls retain at least a practical 40–44 px primary touch target; dense score cells may be smaller only when arranged as a stable grid with clear spacing.
+7. **Launch before selling.** The home page starts with playable choices, not brand claims, oversized slogans, or ornamental motion.
 
 ## Visual language
 
@@ -58,7 +61,14 @@ Hajun Arcade is a compact, premium game room: dark green felt, warm brass, preci
 
 - Adds a `game-shell` route state.
 - Uses the full `100dvh` without the global header/footer, a `min-height: 0` main area, and hidden body overflow only while a game route is active.
-- Home and leaderboard retain the full header/footer and normal document flow.
+- Home and leaderboard retain the global header and normal document flow; the promotional footer is omitted.
+
+### Home game launcher
+
+- A short heading and one explicit `전체 순위` action introduce the page.
+- Three equal-priority cards link directly to 3-cushion, four-ball, and Yacht; each contains only game identity, run format, one-line rule summary, and a clear play affordance.
+- The three compact leaderboards follow immediately. Do not repeat a separate Hall of Fame sales pitch.
+- Decorative orbit rings, floating balls/dice, oversized hero copy, generic installation claims, and a promotional footer are excluded.
 
 ### Play HUD
 
@@ -112,6 +122,7 @@ Hajun Arcade is a compact, premium game room: dark green felt, warm brass, preci
 ### Mobile portrait (`<= 860px`)
 
 - No global game navigation; a compact icon-only back action stays in the play HUD.
+- Home uses a normal top app bar, a dense single-column game list that exposes all three choices in the initial portrait viewport, and a single-column leaderboard list. It must not add a fixed bottom navigation bar.
 - Play HUD: approximately 64–68 px.
 - Billiards remains stage-first with the narrow direct rail.
 - Yacht stacks dice/action above the score decision grid; both must fit within the remaining dynamic viewport.
@@ -159,3 +170,4 @@ Hajun Arcade is a compact, premium game room: dark green felt, warm brass, preci
 - **Decision:** no new rigid-body dependency. Yacht uses a bounded lightweight impulse simulation for five dice.
 - **Decision:** dense mobile score hints are visually condensed, while full rule text remains in accessible labels.
 - **Decision:** browser verification uses Chrome DevTools Protocol, not Playwright.
+- **Decision:** home is a functional launcher, not a marketing landing page; game choices precede leaderboard previews and there is no decorative hero/footer.

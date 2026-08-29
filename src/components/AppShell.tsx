@@ -30,12 +30,6 @@ export function AppShell() {
         </header>
       )}
       <main><Outlet /></main>
-      {!isGameRoute && (
-        <footer className="site-footer">
-          <span>HAJUN ARCADE © {new Date().getFullYear()}</span>
-          <span>CAROM · DICE · GLORY</span>
-        </footer>
-      )}
     </div>
   )
 }
