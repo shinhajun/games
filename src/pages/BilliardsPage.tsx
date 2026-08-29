@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent, type WheelEvent } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type WheelEvent } from 'react'
 import { Check, ChevronsDown, Eye, Heart, X } from 'lucide-react'
 import { useProfile } from '../useProfile'
 import { GameHeader, type RankedState } from '../components/GameHeader'
@@ -9,7 +9,14 @@ import {
   type BilliardsSceneHandle,
   type StrokeStyle,
 } from '../game/billiards/BilliardsScene'
-import { cuePullFraction, DEFAULT_CUE_ELEVATION, powerFromCuePull } from '../game/billiards/controls'
+import {
+  canLaunchCuePull,
+  cuePullFromKeyboard,
+  cuePullFraction,
+  DEFAULT_CUE_ELEVATION,
+  powerFromCuePull,
+  spinForStrokePreset,
+} from '../game/billiards/controls'
 import { PHYSICS, type BilliardsMode, type ShotVerdict, type Vec2 } from '../game/billiards/engine'
 import { BILLIARDS_STARTING_LIVES, settleBilliardsShot } from '../game/billiards/run'
 import { prepareCloudLeaderboard, startScoreRun, submitScore } from '../lib/leaderboard'
@@ -21,9 +28,9 @@ const gameTitle: Record<BilliardsMode, string> = {
 }
 
 const strokeOptions: { id: StrokeStyle; label: string; detail: string }[] = [
-  { id: 'push', label: '밀어치기', detail: '긴 팔로우' },
-  { id: 'normal', label: '기본', detail: '균형' },
-  { id: 'punch', label: '끊어치기', detail: '짧고 강하게' },
+  { id: 'push', label: '밀어치기', detail: '상단 당점 · 긴 피니시' },
+  { id: 'normal', label: '기본', detail: '중앙 당점 · 표준 피니시' },
+  { id: 'punch', label: '끊어치기', detail: '하단 당점 · 짧은 피니시' },
 ]
 
 interface AimGesture {
@@ -35,7 +42,7 @@ interface AimGesture {
 interface CuePullGesture {
   pointerId: number
   startY: number
-  controlBottom: number
+  maximumTravel: number
   pull: number
 }
 
@@ -120,8 +127,13 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
     setView('aim')
   }
 
+  function selectStroke(nextStroke: StrokeStyle) {
+    setStroke(nextStroke)
+    setSpin((current) => spinForStrokePreset(nextStroke, current))
+  }
+
   async function launchPulledShot(pull: number) {
-    if (launchPending.current || shooting || lives <= 0 || pull < 0.08) {
+    if (launchPending.current || shooting || lives <= 0 || !canLaunchCuePull(pull)) {
       updateCuePull(0)
       return
     }
@@ -177,15 +189,17 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
     event.currentTarget.setPointerCapture(event.pointerId)
     const controlRect = event.currentTarget.getBoundingClientRect()
     const shaft = event.currentTarget.querySelector<HTMLElement>('.rail-cue-shaft')
+    let maximumTravel = Math.max(24, controlRect.height - 18)
     if (shaft) {
       const shaftStyle = getComputedStyle(shaft)
       const handleCentre = Number.parseFloat(shaftStyle.top) + shaft.offsetHeight + 2
-      setCueTravel(Math.max(24, controlRect.height - 18 - handleCentre))
+      maximumTravel = Math.max(24, controlRect.height - 18 - handleCentre)
     }
+    setCueTravel(maximumTravel)
     cuePullRef.current = {
       pointerId: event.pointerId,
       startY: event.clientY,
-      controlBottom: controlRect.bottom,
+      maximumTravel,
       pull: 0,
     }
     setCuePulling(true)
@@ -197,7 +211,7 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
     if (!gesture || gesture.pointerId !== event.pointerId) return
     event.preventDefault()
     event.stopPropagation()
-    gesture.pull = cuePullFraction(gesture.startY, event.clientY, gesture.controlBottom)
+    gesture.pull = cuePullFraction(gesture.startY, event.clientY, gesture.maximumTravel)
     updateCuePull(gesture.pull)
   }
 
@@ -210,6 +224,19 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
     setCuePulling(false)
     if (cancelled) updateCuePull(0)
     else void launchPulledShot(gesture.pull)
+  }
+
+  function keyCuePull(event: KeyboardEvent<HTMLButtonElement>) {
+    const nextPull = cuePullFromKeyboard(cuePull, event.key, event.shiftKey)
+    if (nextPull !== null) {
+      event.preventDefault()
+      updateCuePull(nextPull)
+      return
+    }
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      void launchPulledShot(cuePull)
+    }
   }
 
   function wheelAim(event: WheelEvent<HTMLDivElement>) {
@@ -344,9 +371,10 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
               <button
                 key={option.id}
                 className={`${option.id} ${stroke === option.id ? 'active' : ''}`}
-                onClick={() => setStroke(option.id)}
+                onClick={() => selectStroke(option.id)}
                 disabled={shooting}
                 aria-label={`${option.label}, ${option.detail}`}
+                aria-pressed={stroke === option.id}
               >
                 <i /><span>{option.id === 'push' ? '밀기' : option.id === 'punch' ? '끊기' : '기본'}</span>
               </button>
@@ -361,7 +389,14 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
               onPointerMove={moveCuePull}
               onPointerUp={(event) => endCuePull(event)}
               onPointerCancel={(event) => endCuePull(event, true)}
+              onKeyDown={keyCuePull}
               disabled={view !== 'aim' || shooting || lives <= 0 || rankedState === 'checking'}
+              role="slider"
+              aria-orientation="vertical"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={power}
+              aria-valuetext={`세기 ${power}. 방향키로 조절하고 Enter로 치기`}
               aria-label="큐를 아래로 당겼다가 놓아 치기"
             >
               <span className="rail-cue-shaft" style={{ '--cue-offset': `${cuePull * cueTravel}px` } as CSSProperties}><i /></span>

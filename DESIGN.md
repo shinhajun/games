@@ -82,6 +82,9 @@ Hajun Arcade is a compact, premium game room: dark green felt, warm brass, preci
 
 - Table consumes all area below the HUD.
 - Shot rail stays directly on the right edge, always visible, with 0–45° cue elevation, stroke, and pull-release controls.
+- The cue power strip uses a fixed 0–100 travel independent of initial touch position: drag downward and release, with every displayed power from 1 accepted. The engine maps that intent progressively to cue-ball speed so the lower third remains a precision range and maximum pull never saturates early.
+- Short landscape screens switch the three delivery presets into one compact row and widen the right rail, preserving a practical vertical power drag instead of compressing it into a few pixels.
+- `밀기`, `기본`, and `끊기` are honest delivery presets: they move the physical strike point to upper, centre, and lower ball while changing the cue animation finish. At equal displayed power and equal strike point, labels never add hidden speed, spin, or squirt multipliers.
 - Cue elevation includes a compact physical side preview: the rendered cue rises around the ball as the 0–45° value changes. Its native range input must be explicitly constrained to the rail width on mobile.
 - Every new or restarted billiards run begins with a level 0° cue; elevated shots are always an explicit player choice.
 - The strike point is a 3D reticle clamped to the physical cue-ball surface; dragging it moves the rendered cue tip and the impact vector together.

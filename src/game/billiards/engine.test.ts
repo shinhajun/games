@@ -96,12 +96,22 @@ describe('regulation equipment and rigid-body physics', () => {
     expect(cue.angularVelocity.z).toBeLessThan(0)
   })
 
-  it('uses a progressive power curve with a full-power carom shot above 6m/s', () => {
+  it('uses a progressive power curve with controllable low power and a 6.2m/s ceiling', () => {
     expect(shotSpeedForPower(0, 'normal')).toBe(PHYSICS.minimumShotSpeed)
-    expect(shotSpeedForPower(25, 'normal')).toBeGreaterThan(0.9)
-    expect(shotSpeedForPower(50, 'normal')).toBeGreaterThan(2.3)
+    expect(shotSpeedForPower(5, 'normal')).toBeGreaterThan(PHYSICS.stopSpeed)
+    expect(shotSpeedForPower(10, 'normal')).toBeLessThan(0.4)
+    expect(shotSpeedForPower(25, 'normal')).toBeGreaterThan(0.8)
+    expect(shotSpeedForPower(50, 'normal')).toBeGreaterThan(2)
     expect(shotSpeedForPower(100, 'normal')).toBe(PHYSICS.maximumShotSpeed)
-    expect(shotSpeedForPower(100, 'punch')).toBeGreaterThan(PHYSICS.maximumShotSpeed)
+    expect(shotSpeedForPower(100, 'punch')).toBe(PHYSICS.maximumShotSpeed)
+  })
+
+  it('does not add hidden speed, spin, or squirt bonuses for a stroke label', () => {
+    const settings = ['push', 'normal', 'punch'] as const
+    const shots = settings.map((stroke) => shotKinematics('three-cushion', 0.4, 62, { x: 0.3, y: -0.2 }, stroke))
+
+    expect(shots[1]).toEqual(shots[0])
+    expect(shots[2]).toEqual(shots[0])
   })
 
   it('limits the strike point to the chalked-tip range and applies side-spin squirt', () => {

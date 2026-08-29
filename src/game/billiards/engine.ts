@@ -206,6 +206,10 @@ function approachZero(value: number, amount: number) {
   return value - Math.sign(value) * amount
 }
 
+function cleanNumericalZero(value: number) {
+  return Math.abs(value) < 1e-12 ? 0 : value
+}
+
 function momentOfInertia(spec: TableSpec) {
   const radius = spec.ballDiameter / 2
   return (2 / 5) * spec.ballMass * radius * radius
@@ -233,9 +237,11 @@ export interface ShotKinematics {
 
 export function shotSpeedForPower(power: number, stroke: StrokeStyle) {
   const normalizedPower = clamp(power, 0, 100) / 100
-  const strokePower = stroke === 'punch' ? 1.04 : stroke === 'push' ? 0.96 : 1
   const speedRange = PHYSICS.maximumShotSpeed - PHYSICS.minimumShotSpeed
-  return (PHYSICS.minimumShotSpeed + Math.pow(normalizedPower, 1.45) * speedRange) * strokePower
+  // Stroke labels describe cue delivery, not a hidden force multiplier. At a
+  // given displayed power, actual impact speed is identical for every style.
+  void stroke
+  return PHYSICS.minimumShotSpeed + Math.pow(normalizedPower, 1.6) * speedRange
 }
 
 function limitedTipOffset(spin: Vec2) {
@@ -288,11 +294,9 @@ export function shotKinematics(mode: BilliardsMode, angle: number, power: number
   const speed = shotSpeedForPower(power, stroke) * Math.cos(geometry.elevation) ** 2
   // A low-deflection carom shaft still squirts immediately away from the struck side.
   // Elevated-cue swerve is not folded into this value: cloth friction produces it over time.
-  const strokeSquirt = stroke === 'punch' ? 1.08 : stroke === 'push' ? 0.92 : 1
-  const squirtAngle = -geometry.tipOffset.x * (0.25 + normalizedPower * 0.65) * strokeSquirt * Math.PI / 180
+  const squirtAngle = -geometry.tipOffset.x * (0.25 + normalizedPower * 0.65) * Math.PI / 180
   const launchAngle = angle + squirtAngle
   const direction = { x: Math.cos(launchAngle), y: Math.sin(launchAngle) }
-  const strokeSpin = stroke === 'push' ? 1.08 : stroke === 'punch' ? 0.84 : 1
   // The table cancels the cue's downward linear impulse, while its torque about
   // the contact point still affects the ball. Scale the 3D cue impulse so its
   // horizontal projection matches the simulated launch momentum exactly.
@@ -314,9 +318,9 @@ export function shotKinematics(mode: BilliardsMode, angle: number, power: number
   return {
     velocity: { x: direction.x * speed, y: direction.y * speed },
     angularVelocity: {
-      x: angularImpulse.x / inertia * strokeSpin,
-      y: angularImpulse.y / inertia * strokeSpin,
-      z: angularImpulse.z / inertia * strokeSpin,
+      x: cleanNumericalZero(angularImpulse.x / inertia),
+      y: cleanNumericalZero(angularImpulse.y / inertia),
+      z: cleanNumericalZero(angularImpulse.z / inertia),
     },
     impulse,
     launchAngle,

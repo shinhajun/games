@@ -192,6 +192,25 @@ html:has(.game-shell),
   .rail-elevation{padding:2px;grid-template-rows:auto minmax(18px,1fr) 11px;gap:1px}.rail-elevation-heading small,.rail-elevation-scale{display:none}.rail-elevation-heading{justify-content:center}.rail-elevation-heading strong{font-size:9px}.rail-elevation-preview{min-height:18px}.rail-elevation-ball{left:8px;bottom:1px;width:10px;height:10px}.rail-elevation-cue{left:16px;bottom:6px}.rail-elevation-arc{left:12px;bottom:4px;width:22px;height:22px}.rail-elevation-slider{height:11px;padding:4px 0}
 }
 
+@media(min-width:480px) and (max-width:860px) and (max-height:620px){
+  .game-shell .billiards-page .billiards-layout{--shot-rail-width:112px}
+  .shot-rail{grid-template-rows:34px 50px 42px minmax(128px,1fr)}
+  .rail-strokes{padding:2px 0;grid-template-columns:repeat(3,minmax(0,1fr));gap:2px}
+  .rail-strokes button{min-width:0;min-height:36px;padding:2px 1px;display:flex;gap:2px}
+  .rail-strokes button i,.rail-strokes button.punch i{width:24px}
+  .rail-strokes button span{font-size:6px}
+  .rail-cue-shaft{height:36px}
+  .rail-cue-scale{top:41px}
+}
+
+@media(min-width:480px) and (max-width:860px) and (max-height:360px){
+  .game-shell .billiards-page .billiards-layout{--shot-rail-width:106px}
+  .shot-rail{grid-template-rows:30px 42px 38px minmax(108px,1fr)}
+  .rail-strokes button{min-height:32px}
+  .rail-cue-shaft{height:28px}
+  .rail-cue-scale{top:33px}
+}
+
 /* Fifteen Yatzy categories plus one automatic upper-section bonus status row. */
 .score-bonus-row{width:100%;min-height:42px;padding:0 4px;border-bottom:1px solid rgba(242,198,93,.24);color:var(--muted);background:rgba(242,198,93,.035);display:grid;grid-template-columns:22px 1.2fr 1fr 34px;align-items:center;gap:6px;text-align:left}
 .score-bonus-row strong{font-size:10px}.score-bonus-row small{color:var(--faint);font-size:8px}.score-bonus-row em{justify-self:end;color:var(--faint);font:normal 500 10px/1 var(--mono)}.score-bonus-row.earned{color:var(--ink);background:rgba(242,198,93,.09)}.score-bonus-row.earned em{color:var(--amber);font-size:13px}
