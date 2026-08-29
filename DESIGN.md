@@ -45,6 +45,7 @@ Hajun Arcade is a compact, premium game room: dark green felt, warm brass, preci
 5. **Stable geometry.** UI must not jump when state changes, animation completes, or mobile browser bars resize.
 6. **Touch-safe density.** Compact controls retain at least a practical 40–44 px primary touch target; dense score cells may be smaller only when arranged as a stable grid with clear spacing.
 7. **Launch before selling.** The home page starts with playable choices, not brand claims, oversized slogans, or ornamental motion.
+8. **One state, one signal.** Do not repeat the same score, life count, view mode, progress, instruction, or ranking destination in adjacent UI.
 
 ## Visual language
 
@@ -74,8 +75,8 @@ Hajun Arcade is a compact, premium game room: dark green felt, warm brass, preci
 
 - Fixed-height top row inside each game.
 - Back action, title, score, and five-life state align horizontally.
-- A compact `RANKED` / `LOCAL ONLY` status makes cloud-run eligibility visible before the result screen.
-- Secondary eyebrow/title detail may hide in short landscape viewports.
+- A compact `순위` / `로컬` status makes cloud-run eligibility visible before the result screen.
+- Do not repeat the game title in an eyebrow or repeat the five-life state as both hearts and a numeric counter.
 
 ### Billiards stage and shot rail
 
@@ -84,6 +85,7 @@ Hajun Arcade is a compact, premium game room: dark green felt, warm brass, preci
 - The strike point is a 3D reticle clamped to the physical cue-ball surface; dragging it moves the rendered cue tip and the impact vector together.
 - The launch guide follows the predicted initial ball vector, including the small immediate squirt from side tip offset.
 - Table annotations avoid the rail safe zone.
+- The rail is the sole view-mode indicator and control. Technical table dimensions and a second view badge do not overlay the playfield.
 
 ### Yacht dice tray
 
@@ -95,12 +97,19 @@ Hajun Arcade is a compact, premium game room: dark green felt, warm brass, preci
 
 - Five compact hold toggles and one high-contrast roll action remain adjacent to the tray.
 - The roll button exposes the remaining-roll state without changing its footprint.
+- The tray roll indicators and action label are sufficient; do not add a repeated tutorial sentence beneath the controls.
 
 ### Yacht scorecard
 
 - Desktop: one compact 12-row column next to the tray.
 - Portrait/landscape mobile: 2-column × 6-row decision grid to keep every category visible.
 - Candidate, locked, maximum, and disabled states must remain distinguishable without relying on hover.
+- Total score appears once in the HUD. The scorecard does not repeat total or round progress.
+
+### Result dialog
+
+- Shows one final score, one plain completion sentence, save state, replay, and full-ranking action.
+- Does not embed another leaderboard, repeat the score in a second card, add decorative completion slogans, or use game-unrelated metaphors.
 
 ## Accessibility
 
@@ -138,7 +147,7 @@ Hajun Arcade is a compact, premium game room: dark green felt, warm brass, preci
 
 - **Idle:** primary action enabled; unavailable choices visibly muted.
 - **Rolling/moving:** conflicting controls disabled; scene continues rendering without layout shift.
-- **Held:** amber die plus textual HOLD state.
+- **Held:** amber die plus textual `고정됨` state.
 - **Candidate:** mint score; maximum candidate receives a filled badge.
 - **Locked:** recorded score uses amber and cannot be changed.
 - **Loading/error/WebGL fallback:** stays inside the playfield bounds; never expands the page.
@@ -146,7 +155,7 @@ Hajun Arcade is a compact, premium game room: dark green felt, warm brass, preci
 
 ## Content voice
 
-- Short, active Korean labels supported by compact English instrumentation.
+- Short, active Korean labels. Keep English only for established game terms such as Yacht category names.
 - Put rules in labels and accessible descriptions rather than persistent paragraphs during play.
 - Prefer `굴리기`, `홀드`, `점수 선택`, `조준`, `스트로크` over tutorial prose.
 

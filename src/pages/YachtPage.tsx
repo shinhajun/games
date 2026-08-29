@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { Anchor, ArrowLeft, Check, Dice5, Hand, RotateCcw, Sparkles } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Check, Dice5, Hand } from 'lucide-react'
 import { useProfile } from '../useProfile'
-import { Leaderboard } from '../components/Leaderboard'
+import { GameHeader, type RankedState } from '../components/GameHeader'
+import { GameResultDialog } from '../components/GameResultDialog'
 import { DiceScene } from '../game/yacht/DiceScene'
 import { scoreYachtCategory, totalYachtScore, YACHT_CATEGORIES, type YachtCategory } from '../game/yacht/scoring'
 import { prepareCloudLeaderboard, startScoreRun, submitScore } from '../lib/leaderboard'
@@ -26,7 +26,7 @@ export function YachtPage() {
   const [scores, setScores] = useState<Partial<Record<YachtCategory, number>>>({})
   const [finished, setFinished] = useState(false)
   const [saved, setSaved] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
-  const [rankedState, setRankedState] = useState<'checking' | 'ready' | 'local'>('checking')
+  const [rankedState, setRankedState] = useState<RankedState>('checking')
   const total = totalYachtScore(scores)
   const round = Object.keys(scores).length + 1
 
@@ -126,17 +126,15 @@ export function YachtPage() {
 
   return (
     <div className="play-page yacht-page">
-      <header className="play-header page-wrap">
-        <Link to="/" className="back-link" aria-label="게임 선택 화면으로"><ArrowLeft size={17} /><span>게임 선택</span></Link>
-        <div className="play-title"><span className="play-eyebrow-row"><span className="eyebrow">YACHT DICE · CLASSIC 12</span><span className={`ranked-state ${rankedState}`}>{rankedState === 'checking' ? 'CONNECTING' : rankedState === 'ready' ? 'RANKED' : 'LOCAL ONLY'}</span></span><h1>Yacht Dice</h1></div>
-        <div className="yacht-total"><small>TOTAL SCORE</small><strong>{total}<em>/297</em></strong></div>
-      </header>
+      <GameHeader title="Yacht Dice" rankedState={rankedState}>
+        <div className="yacht-total"><small>총점</small><strong>{total}<em>/297</em></strong></div>
+      </GameHeader>
 
       <section className="yacht-layout page-wrap">
         <div className="dice-column">
           <div className="dice-stage">
             <DiceScene values={dice} held={held} rolling={rolling} rollNonce={rollNonce} onToggle={toggleHold} />
-            <div className="dice-stage-label"><Anchor size={14} /> ROUND {Math.min(round, 12)}<span>/12</span></div>
+            <div className="dice-stage-label">라운드 {Math.min(round, 12)}<span>/12</span></div>
             <div className="roll-indicator">{[1, 2, 3].map((roll) => <i className={roll <= rolls ? 'used' : ''} key={roll}>{roll}</i>)}</div>
           </div>
 
@@ -144,20 +142,19 @@ export function YachtPage() {
             <div className="hold-buttons" aria-label="주사위 홀드 선택">
               {dice.map((value, index) => (
                 <button key={index} onClick={() => toggleHold(index)} className={held[index] ? 'held' : ''} disabled={rolls === 0 || rolling}>
-                  <span>{value}</span><small>{held[index] ? <><Check size={12} /> HOLD</> : `DIE ${index + 1}`}</small>
+                  <span>{value}</span><small>{held[index] ? <><Check size={12} /> 고정됨</> : '홀드'}</small>
                 </button>
               ))}
             </div>
             <button className="roll-button" onClick={() => { void roll() }} disabled={rolling || rolls >= 3 || (rolls === 0 && rankedState === 'checking')}>
-              {rolls === 0 && rankedState === 'checking' ? <><span className="button-loader" /> RANKED 연결</> : rolling ? <><span className="button-loader" /> ROLLING</> : rolls === 0 ? <><Dice5 /> 주사위 굴리기</> : rolls < 3 ? <><Dice5 /> 다시 굴리기 <small>{3 - rolls} LEFT</small></> : <><Hand /> 점수를 선택하세요</>}
+              {rolls === 0 && rankedState === 'checking' ? <><span className="button-loader" /> 순위 연결 중</> : rolling ? <><span className="button-loader" /> 굴리는 중</> : rolls === 0 ? <><Dice5 /> 주사위 굴리기</> : rolls < 3 ? <><Dice5 /> 다시 굴리기 <small>{3 - rolls}회 남음</small></> : <><Hand /> 점수를 선택하세요</>}
             </button>
-            <p><Hand size={14} /> 주사위를 눌러 홀드 · 턴마다 최대 3회</p>
           </div>
         </div>
 
         <aside className="scorecard">
-          <header><div><span className="eyebrow">SCORE CARD</span><h2>항해 일지</h2></div><span>{Object.keys(scores).length}<small>/12 FILLED</small></span></header>
-          <div className="scorecard-labels"><span>CATEGORY</span><span>RULE</span><span>SCORE</span></div>
+          <header><h2>점수판</h2></header>
+          <div className="scorecard-labels"><span>족보</span><span>조건</span><span>점수</span></div>
           <div className="score-rows">
             {YACHT_CATEGORIES.map((category, index) => {
               const locked = scores[category.id]
@@ -178,22 +175,19 @@ export function YachtPage() {
               )
             })}
           </div>
-          <footer><span>TOTAL</span><strong>{total}</strong><small>MAX 297</small></footer>
         </aside>
       </section>
 
       {finished && (
-        <div className="result-overlay" role="dialog" aria-modal="true" aria-labelledby="yacht-result-title">
-          <div className="result-card yacht-result">
-            <span className="result-spark"><Sparkles /></span>
-            <span className="eyebrow">VOYAGE COMPLETE</span>
-            <h2 id="yacht-result-title">오늘의 항해,<br /><em>{total}점.</em></h2>
-            <p>{total >= 220 ? '완벽에 가까운 항해였습니다.' : total >= 160 ? '과감한 선택이 좋은 기록을 만들었어요.' : '다음 항해에는 더 좋은 바람이 불 겁니다.'}</p>
-            <div className="result-score"><small>FINAL SCORE</small><strong>{total}<span>/297</span></strong><small>{saved === 'saving' ? '기록 저장 중…' : saved === 'saved' ? '최고 기록 반영 완료' : saved === 'error' ? '로컬 기록 저장 완료' : ''}</small></div>
-            <div className="result-actions"><button className="primary-button" onClick={restart} disabled={saved === 'saving'}><RotateCcw /> 다시 항해</button><Link className="text-button" to="/leaderboard">전체 순위 보기</Link></div>
-            <Leaderboard key={saved} game="yacht" compact />
-          </div>
-        </div>
+        <GameResultDialog
+          titleId="yacht-result-title"
+          score={total}
+          maxScore={297}
+          message="12개 족보를 모두 기록했습니다."
+          saved={saved}
+          onRestart={restart}
+          accent="amber"
+        />
       )}
     </div>
   )

@@ -1,33 +1,23 @@
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent, type WheelEvent } from 'react'
-import { ArrowLeft, Check, ChevronsDown, Crosshair, Eye, Heart, MoveHorizontal, RotateCcw, Sparkles, X } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Check, ChevronsDown, Eye, Heart, X } from 'lucide-react'
 import { useProfile } from '../useProfile'
-import { Leaderboard } from '../components/Leaderboard'
+import { GameHeader, type RankedState } from '../components/GameHeader'
+import { GameResultDialog } from '../components/GameResultDialog'
 import {
   BilliardsScene,
   type BilliardsSceneHandle,
   type StrokeStyle,
 } from '../game/billiards/BilliardsScene'
 import { cuePullFraction, powerFromCuePull } from '../game/billiards/controls'
-import { getTableSpec, PHYSICS, type BilliardsMode, type ShotVerdict, type Vec2 } from '../game/billiards/engine'
+import { PHYSICS, type BilliardsMode, type ShotVerdict, type Vec2 } from '../game/billiards/engine'
 import { BILLIARDS_STARTING_LIVES, settleBilliardsShot } from '../game/billiards/run'
 import { prepareCloudLeaderboard, startScoreRun, submitScore } from '../lib/leaderboard'
 import { nowMs } from '../lib/time'
 
-const copy = {
-  'three-cushion': {
-    eyebrow: 'THREE CUSHION · 5 LIFE RUN',
-    title: '3쿠션',
-    description: '수구로 두 목적구를 맞히되, 두 번째 목적구 전에 쿠션을 3회 이상 맞히면 득점합니다.',
-    tip: '첫 샷은 빨간 공을 직접 먼저 맞힙니다. 득점하면 계속 진행하고, 실패할 때만 목숨이 1개 줄어듭니다.',
-  },
-  'four-ball': {
-    eyebrow: 'FOUR BALL · 5 LIFE RUN',
-    title: '4구',
-    description: '흰 수구로 빨간 공 2개를 모두 맞히면 득점. 노란 상대 수구를 맞히면 파울입니다.',
-    tip: '첫 샷은 반대편 빨간 공을 직접 먼저 맞힙니다. 노란 공을 피하고, 실패할 때만 목숨이 1개 줄어듭니다.',
-  },
-} as const
+const gameTitle: Record<BilliardsMode, string> = {
+  'three-cushion': '3쿠션',
+  'four-ball': '4구',
+}
 
 const strokeOptions: { id: StrokeStyle; label: string; detail: string }[] = [
   { id: 'push', label: '밀어치기', detail: '긴 팔로우' },
@@ -81,10 +71,7 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
   const [lastVerdict, setLastVerdict] = useState<ShotVerdict | null>(null)
   const [finished, setFinished] = useState(false)
   const [saved, setSaved] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
-  const [rankedState, setRankedState] = useState<'checking' | 'ready' | 'local'>('checking')
-
-  const info = copy[mode]
-  const tableSpec = getTableSpec(mode)
+  const [rankedState, setRankedState] = useState<RankedState>('checking')
 
   useEffect(() => () => {
     if (finishTimer.current !== null) window.clearTimeout(finishTimer.current)
@@ -267,22 +254,16 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
 
   return (
     <div className="play-page billiards-page">
-      <header className="play-header page-wrap">
-        <Link to="/" className="back-link" aria-label="게임 선택 화면으로"><ArrowLeft size={17} /><span>게임 선택</span></Link>
-        <div className="play-title">
-          <span className="play-eyebrow-row"><span className="eyebrow">{info.eyebrow}</span><span className={`ranked-state ${rankedState}`}>{rankedState === 'checking' ? 'CONNECTING' : rankedState === 'ready' ? 'RANKED' : 'LOCAL ONLY'}</span></span>
-          <h1>{info.title}</h1>
-        </div>
+      <GameHeader title={gameTitle[mode]} rankedState={rankedState}>
         <div className="shot-score" aria-label={`현재 점수 ${score}점, 남은 목숨 ${lives}개`}>
-          <span><small>SCORE</small><strong>{score}</strong></span>
+          <span><small>점수</small><strong>{score}</strong></span>
           <div className="life-dots" aria-hidden="true">
             {Array.from({ length: BILLIARDS_STARTING_LIVES }, (_, index) => (
               <i key={index} className={index < lives ? 'active' : 'used'}><Heart /></i>
             ))}
           </div>
-          <span><small>LIVES</small><strong>{lives}<em>/{BILLIARDS_STARTING_LIVES}</em></strong></span>
         </div>
-      </header>
+      </GameHeader>
 
       <section className="billiards-layout">
         <div
@@ -324,22 +305,15 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
               }
             }}
           />
-          {view === 'aim' && !shooting && lives > 0 && (
-            <div className="shot-gesture-layer" aria-hidden="true">
-              <div className="aim-swipe-hint"><MoveHorizontal /> 좌우로 밀어 조준</div>
-            </div>
-          )}
-          <div className={`view-badge ${view}`}><Eye size={14} /> {view === 'aim' ? 'PLAYER VIEW' : 'TABLE VIEW'}</div>
-          <div className="table-spec-badge">
-            {tableSpec.label} · {Math.round(tableSpec.playingLength * 1000)}×{Math.round(tableSpec.playingWidth * 1000)}mm · Ø{(tableSpec.ballDiameter * 1000).toFixed(1)}mm · {Math.round(tableSpec.ballMass * 1000)}g
-          </div>
           {lastVerdict && (
             <div className={`shot-verdict ${lastVerdict.success ? 'success' : 'miss'}`}>
               <span>{lastVerdict.success ? <Check /> : <X />}</span>
               <div><strong>{lastVerdict.title}</strong><small>{lastVerdict.detail}</small></div>
             </div>
           )}
-          <div className="table-hint"><Crosshair size={14} /> {view === 'overview' ? '테이블 위에서 보낼 지점을 터치하세요.' : '수구 위 당점 드래그 · 좌우 조준 · 오른쪽 큐로 샷'}</div>
+          {!shooting && lives > 0 && (
+            <div className="table-hint">{view === 'overview' ? '보낼 지점을 터치' : '당점 드래그 · 좌우 조준 · 큐 당기기'}</div>
+          )}
         </div>
 
         <aside
@@ -359,7 +333,7 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
           </button>
 
           <label className="rail-elevation">
-            <span><small>CUE ANGLE</small><strong>{elevation}°</strong></span>
+            <span><small>큐 각도</small><strong>{elevation}°</strong></span>
             <input
               type="range"
               min="0"
@@ -370,11 +344,11 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
               disabled={shooting}
               aria-label="큐 세우기 각도"
             />
-            <em>{elevation < 8 ? 'LOW' : elevation < 24 ? 'RAISE' : 'MASSÉ'}</em>
+            <em>{elevation < 8 ? '낮게' : elevation < 24 ? '세워치기' : '마세'}</em>
           </label>
 
           <div className="rail-strokes" role="group" aria-label="스트로크 선택">
-            <small>STROKE</small>
+            <small>스트로크</small>
             {strokeOptions.map((option) => (
               <button
                 key={option.id}
@@ -389,7 +363,7 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
           </div>
 
           <div className="rail-cue-control">
-            <span className="rail-power"><small>POWER</small><strong>{power}</strong></span>
+            <span className="rail-power"><small>세기</small><strong>{power}</strong></span>
             <button
               className="rail-cue-pull"
               onPointerDown={beginCuePull}
@@ -409,27 +383,14 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
         </aside>
       </section>
 
-      <section className="rule-strip page-wrap">
-        <span className="rule-index">RULE / 01</span>
-        <div><strong>{info.description}</strong><p>{info.tip}</p></div>
-        <span className="rule-balls" aria-hidden="true"><i /><i /><i />{mode === 'four-ball' && <i />}</span>
-      </section>
-
       {finished && (
-        <div className="result-overlay" role="dialog" aria-modal="true" aria-labelledby="result-title">
-          <div className="result-card">
-            <span className="result-spark"><Sparkles /></span>
-            <span className="eyebrow">CHALLENGE COMPLETE</span>
-            <h2 id="result-title">5개의 목숨으로,<br /><em>{score}번의 득점.</em></h2>
-            <p>{score >= 10 ? '테이블을 완전히 읽으셨군요.' : score >= 5 ? '좋은 감각입니다. 다음 기록은 더 높을 거예요.' : '각도는 매번 새롭게 보입니다. 다시 읽어보세요.'}</p>
-            <div className="result-score"><small>FINAL SCORE</small><strong>{score}<span>PTS</span></strong><small>{saved === 'saving' ? '기록 저장 중…' : saved === 'saved' ? '최고 기록 반영 완료' : saved === 'error' ? '로컬 기록 저장 완료' : ''}</small></div>
-            <div className="result-actions">
-              <button className="primary-button" onClick={restart} disabled={saved === 'saving'}><RotateCcw /> 다시 도전</button>
-              <Link className="text-button" to="/leaderboard">전체 순위 보기</Link>
-            </div>
-            <Leaderboard key={saved} game={mode} compact />
-          </div>
-        </div>
+        <GameResultDialog
+          titleId="result-title"
+          score={score}
+          message="5개의 목숨을 모두 사용했습니다."
+          saved={saved}
+          onRestart={restart}
+        />
       )}
     </div>
   )
