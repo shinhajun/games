@@ -1,4 +1,4 @@
-import { Fragment, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { Check, Dice5, Hand } from 'lucide-react'
 import { useProfile } from '../useProfile'
 import { GameHeader } from '../components/GameHeader'
@@ -24,7 +24,8 @@ export function YachtPage() {
   const startedAt = useRef(0)
   const scoreRun = useRef<Promise<string> | null>(null)
   const pendingScore = useRef<ScoreSubmission | null>(null)
-  const rollPending = useRef(false)
+  const rollLaunchPending = useRef(false)
+  const scoreRunRetryTimer = useRef<number | null>(null)
   const runGeneration = useRef(0)
   const [dice, setDice] = useState(freshDice)
   const [held, setHeld] = useState([false, false, false, false, false])
@@ -39,15 +40,29 @@ export function YachtPage() {
   const upperBonus = upperYachtBonus(scores)
   const round = Object.keys(scores).length + 1
 
+  useEffect(() => () => {
+    if (scoreRunRetryTimer.current !== null) window.clearTimeout(scoreRunRetryTimer.current)
+  }, [])
+
   function beginScoreRun() {
     if (scoreRun.current) return scoreRun.current
     const run = startScoreRun('yacht')
-      .catch((error: unknown) => {
-        scoreRun.current = null
-        throw error
-      })
     scoreRun.current = run
+    void run.catch(() => {
+      if (scoreRun.current === run) scoreRun.current = null
+    })
     return run
+  }
+
+  function keepScoreRunAlive(generation = runGeneration.current) {
+    if (scoreRun.current) return
+    void beginScoreRun().catch(() => {
+      if (generation !== runGeneration.current || scoreRunRetryTimer.current !== null) return
+      scoreRunRetryTimer.current = window.setTimeout(() => {
+        scoreRunRetryTimer.current = null
+        keepScoreRunAlive(generation)
+      }, 5000)
+    })
   }
 
   function toggleHold(index: number) {
@@ -55,21 +70,13 @@ export function YachtPage() {
     setHeld((current) => current.map((value, currentIndex) => currentIndex === index ? !value : value))
   }
 
-  async function roll() {
-    if (rollPending.current || rolling || rolls >= 3) return
-    const generation = runGeneration.current
+  function roll() {
+    if (rollLaunchPending.current || rolling || rolls >= 3) return
+    rollLaunchPending.current = true
     if (startedAt.current === 0) {
-      rollPending.current = true
-      try {
-        await beginScoreRun()
-      } catch {
-        return
-      } finally {
-        rollPending.current = false
-      }
-      if (generation !== runGeneration.current) return
       startedAt.current = nowMs()
     }
+    keepScoreRunAlive()
     setRolling(true)
     setRollNonce((value) => value + 1)
   }
@@ -77,6 +84,7 @@ export function YachtPage() {
   function completePhysicalRoll(nextDice: number[]) {
     setDice(nextDice)
     setRolling(false)
+    rollLaunchPending.current = false
     setRolls((value) => value + 1)
   }
 
@@ -112,7 +120,9 @@ export function YachtPage() {
   function restart() {
     if (saved === 'saving' || saved === 'error') return
     runGeneration.current += 1
-    rollPending.current = false
+    rollLaunchPending.current = false
+    if (scoreRunRetryTimer.current !== null) window.clearTimeout(scoreRunRetryTimer.current)
+    scoreRunRetryTimer.current = null
     startedAt.current = 0
     scoreRun.current = null
     pendingScore.current = null
@@ -146,7 +156,7 @@ export function YachtPage() {
                 </button>
               ))}
             </div>
-            <button className="roll-button" onClick={() => { void roll() }} disabled={rolling || rolls >= 3}>
+            <button className="roll-button" onClick={roll} disabled={rolling || rolls >= 3}>
               {rolling ? <><span className="button-loader" /> 굴리는 중</> : rolls === 0 ? <><Dice5 /> 주사위 굴리기</> : rolls < 3 ? <><Dice5 /> 다시 굴리기 <small>{3 - rolls}회 남음</small></> : <><Hand /> 점수를 선택하세요</>}
             </button>
           </div>

@@ -13,11 +13,11 @@ const pipPatterns: Record<number, [number, number][]> = {
   6: [[-0.23, 0.28], [-0.23, 0], [-0.23, -0.28], [0.23, 0.28], [0.23, 0], [0.23, -0.28]],
 }
 
-const FELT_TOP_Y = 0.118
+const FELT_TOP_Y = 0.112
 const DIE_HALF_SIZE = 0.5
-const COLLISION_SKIN = 0.012
+const COLLISION_SKIN = 0.025
 const REST_CENTER_Y = FELT_TOP_Y + DIE_HALF_SIZE + COLLISION_SKIN
-const INNER_WALL_X = 3.95
+const INNER_WALL_X = 3.45
 const INNER_WALL_Z = 1.72
 const COLLISION_DISTANCE = 1.02
 const MIN_SETTLE_TIME = 1.05
@@ -361,12 +361,13 @@ function DiceTray() {
 
   return (
     <group>
-      <RoundedBox args={[8.72, 0.54, 4.38]} radius={0.28} smoothness={6} position={[0, -0.27, 0]} receiveShadow>
+      <RoundedBox args={[8.72, 0.54, 4.38]} radius={0.24} smoothness={6} position={[0, -0.27, 0]} receiveShadow>
         <meshStandardMaterial color="#171915" roughness={0.78} />
       </RoundedBox>
-      <RoundedBox args={[7.86, 0.13, 3.43]} radius={0.19} smoothness={5} position={[0, 0.05, 0]} receiveShadow>
+      <mesh position={[0, 0.052, 0]} receiveShadow>
+        <boxGeometry args={[7.86, 0.12, 3.43]} />
         <meshStandardMaterial color="#174c3b" roughness={0.96} />
-      </RoundedBox>
+      </mesh>
       <RoundedBox args={[8.62, 0.5, 0.35]} radius={0.14} smoothness={5} position={[0, 0.19, -1.91]} castShadow receiveShadow>
         {railMaterial}
       </RoundedBox>

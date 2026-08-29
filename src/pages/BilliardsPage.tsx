@@ -87,11 +87,10 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
   function beginScoreRun() {
     if (scoreRun.current) return scoreRun.current
     const run = startScoreRun(mode)
-      .catch((error: unknown) => {
-        scoreRun.current = null
-        throw error
-      })
     scoreRun.current = run
+    void run.catch(() => {
+      if (scoreRun.current === run) scoreRun.current = null
+    })
     return run
   }
 
@@ -129,10 +128,10 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
     const shotPower = powerFromCuePull(pull)
     try {
       if (startedAt.current === 0) {
-        await beginScoreRun()
         if (generation !== runGeneration.current) return
         startedAt.current = nowMs()
       }
+      if (!scoreRun.current) void beginScoreRun().catch(() => undefined)
       const launched = sceneRef.current?.shoot({ angle: angleRef.current * Math.PI / 180, power: shotPower, spin, stroke, elevation }, pull) ?? false
       if (launched) {
         setPower(shotPower)
