@@ -191,3 +191,24 @@ html:has(.game-shell),
   .shot-rail{grid-template-rows:34px 50px 88px minmax(72px,1fr)}
   .rail-elevation{padding:2px;grid-template-rows:auto minmax(18px,1fr) 11px;gap:1px}.rail-elevation-heading small,.rail-elevation-scale{display:none}.rail-elevation-heading{justify-content:center}.rail-elevation-heading strong{font-size:9px}.rail-elevation-preview{min-height:18px}.rail-elevation-ball{left:8px;bottom:1px;width:10px;height:10px}.rail-elevation-cue{left:16px;bottom:6px}.rail-elevation-arc{left:12px;bottom:4px;width:22px;height:22px}.rail-elevation-slider{height:11px;padding:4px 0}
 }
+
+/* Fifteen Yatzy categories plus one automatic upper-section bonus status row. */
+.score-bonus-row{width:100%;min-height:42px;padding:0 4px;border-bottom:1px solid rgba(242,198,93,.24);color:var(--muted);background:rgba(242,198,93,.035);display:grid;grid-template-columns:22px 1.2fr 1fr 34px;align-items:center;gap:6px;text-align:left}
+.score-bonus-row strong{font-size:10px}.score-bonus-row small{color:var(--faint);font-size:8px}.score-bonus-row em{justify-self:end;color:var(--faint);font:normal 500 10px/1 var(--mono)}.score-bonus-row.earned{color:var(--ink);background:rgba(242,198,93,.09)}.score-bonus-row.earned em{color:var(--amber);font-size:13px}
+.game-shell .yacht-page .score-rows{grid-template-rows:repeat(16,minmax(0,1fr))}
+.game-shell .yacht-page .score-bonus-row{height:100%;min-height:0}
+
+@media(max-width:860px){
+  .game-shell .yacht-page .score-rows{grid-template-rows:repeat(8,minmax(0,1fr))}
+  .game-shell .yacht-page .score-bonus-row{min-width:0;height:100%;padding:0 6px;border:1px solid rgba(242,198,93,.24);grid-template-columns:minmax(0,1fr) 28px;gap:4px}
+  .game-shell .yacht-page .score-bonus-row .category-index,
+  .game-shell .yacht-page .score-bonus-row small{display:none}
+  .game-shell .yacht-page .score-bonus-row strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:8px}
+  .game-shell .yacht-page .score-bonus-row em{font-size:8px}
+  .game-shell .yacht-page .score-bonus-row.earned em{font-size:11px}
+}
+
+@media(max-height:620px) and (max-width:860px) and (orientation:landscape){
+  .game-shell .yacht-page .score-bonus-row{padding-inline:5px}
+  .game-shell .yacht-page .score-bonus-row strong{font-size:7px}
+}

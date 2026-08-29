@@ -25,8 +25,8 @@ describe('shared game chrome', () => {
         <GameResultDialog
           titleId="result-title"
           score={117}
-          maxScore={297}
-          message="12개 족보를 모두 기록했습니다."
+          maxScore={359}
+          message="15개 족보를 모두 기록했습니다."
           saved="saved"
           onRestart={() => undefined}
           accent="amber"
@@ -34,7 +34,7 @@ describe('shared game chrome', () => {
       </MemoryRouter>,
     )
 
-    expect(html).toContain('<em>117</em><span>점</span><small>/ 297</small>')
+    expect(html).toContain('<em>117</em><span>점</span><small>/ 359</small>')
     expect(html).toContain('result-card amber')
     expect(html).toContain('최고 기록에 반영했습니다.')
     expect(html).toContain('다시 하기')

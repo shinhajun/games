@@ -24,7 +24,7 @@ Hajun Arcade is a compact, premium game room: dark green felt, warm brass, preci
 
 - **Quick mobile player:** opens a game, understands the state, and completes turns one-handed without page scrolling.
 - **Carom player:** evaluates the table, enters the player view, selects spin/aim/power/stroke, and shoots with predictable feedback.
-- **Score chaser:** sees remaining Yacht rolls, candidate category scores, total, and leaderboard-oriented result at all times.
+- **Score chaser:** sees remaining Yacht rolls, 15 candidate category scores, upper-section bonus progress, total, and leaderboard-oriented result at all times.
 
 ## Information architecture
 
@@ -93,6 +93,8 @@ Hajun Arcade is a compact, premium game room: dark green felt, warm brass, preci
 - Dice are the primary interactive objects.
 - Roll state and round state overlay the tray without consuming a separate row.
 - Held dice use amber material/state and remain still during subsequent rolls.
+- Unheld dice enter the tray as a shared throw, then respond to gravity, floor/rail restitution, friction, angular momentum, and die-to-die impulses before a damped face settle. They must not teleport directly into a straight display row.
+- The visible raised tray rails match the simulated collision bounds. Rounded dice, inset dark pips, contact shadows, and restrained warm/cool lighting provide depth without exceeding the mobile WebGL budget.
 
 ### Yacht action dock
 
@@ -102,8 +104,10 @@ Hajun Arcade is a compact, premium game room: dark green felt, warm brass, preci
 
 ### Yacht scorecard
 
-- Desktop: one compact 12-row column next to the tray.
-- Portrait/landscape mobile: 2-column × 6-row decision grid to keep every category visible.
+- Uses 15 score categories: Ones–Sixes, Choice, One Pair, Two Pairs, Three/Four of a Kind, Small/Large Straight, Full House, and Yacht.
+- The six upper categories award an automatic 35-point bonus at a subtotal of 63; the non-interactive bonus row stays directly between the upper and lower sections.
+- Desktop: one compact 16-row column next to the tray, including the bonus status row.
+- Portrait/landscape mobile: 2-column × 8-row decision grid to keep every category and the bonus visible.
 - Candidate, locked, maximum, and disabled states must remain distinguishable without relying on hover.
 - Total score appears once in the HUD. The scorecard does not repeat total or round progress.
 
@@ -166,7 +170,7 @@ Hajun Arcade is a compact, premium game room: dark green felt, warm brass, preci
 - React 19, React Three Fiber, Three.js, and existing dependencies only.
 - No Playwright in implementation or verification.
 - Mobile WebGL stability takes priority over high shadow resolution or ornamental effects.
-- Yacht scoring remains the existing 12-category, maximum-297 ruleset.
+- Yacht scoring uses 15 Yatzy-style categories with strict 1–5 / 2–6 straights, plus the requested 63-point threshold and 35-point upper bonus; maximum score is 359.
 - Dice results are chosen by game state; the 3D simulation physically communicates the throw and settles to that result.
 
 ## Open questions and current decisions

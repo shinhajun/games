@@ -8,7 +8,7 @@
 
 - **3쿠션** — 5목숨 동안 득점은 계속 누적하고 실패할 때만 목숨 1개 차감. 두 번째 목적구 전 쿠션 3회 이상이면 1점
 - **한국식 4구** — 5목숨 동안 두 빨간 목적구를 모두 맞히면 1점, 노란 상대 수구 접촉은 파울
-- **Classic Yacht** — 5개 주사위, 턴당 최대 3회 롤, 12개 원형 Yacht 카테고리의 합산 점수(최대 297점)
+- **Yacht Dice** — 5개 주사위, 턴당 최대 3회 롤, 15개 Yatzy 족보와 상단 63점/35점 보너스(최대 359점)
 
 규칙 기준: [UMB Carom rules](https://files.umb-carom.org/Public/Rules/CAROM%20BILLIARD%20RULES.pdf), [대한당구연맹 4구 안내](https://kr.object.ncloudstorage.com/kbfdiv/2025_kbf_division.pdf.pdf), [Classic Yacht scoring](https://en.wikipedia.org/wiki/Yacht_%28dice_game%29).
 

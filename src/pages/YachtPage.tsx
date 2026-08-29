@@ -1,16 +1,23 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { Check, Dice5, Hand } from 'lucide-react'
 import { useProfile } from '../useProfile'
 import { GameHeader, type RankedState } from '../components/GameHeader'
 import { GameResultDialog } from '../components/GameResultDialog'
-import { DiceScene } from '../game/yacht/DiceScene'
-import { scoreYachtCategory, totalYachtScore, YACHT_CATEGORIES, type YachtCategory } from '../game/yacht/scoring'
+import { DICE_ROLL_DURATION_MS, DiceScene } from '../game/yacht/DiceScene'
+import {
+  scoreYachtCategory,
+  totalYachtScore,
+  upperYachtBonus,
+  upperYachtSubtotal,
+  YACHT_CATEGORIES,
+  YACHT_MAX_SCORE,
+  YACHT_UPPER_BONUS_THRESHOLD,
+  type YachtCategory,
+} from '../game/yacht/scoring'
 import { prepareCloudLeaderboard, startScoreRun, submitScore } from '../lib/leaderboard'
 import { nowMs } from '../lib/time'
 
 const freshDice = () => [1, 2, 3, 4, 5]
-const ROLL_DURATION_MS = 1480
-
 export function YachtPage() {
   const { profile } = useProfile()
   const startedAt = useRef(0)
@@ -28,6 +35,8 @@ export function YachtPage() {
   const [saved, setSaved] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [rankedState, setRankedState] = useState<RankedState>('checking')
   const total = totalYachtScore(scores)
+  const upperSubtotal = upperYachtSubtotal(scores)
+  const upperBonus = upperYachtBonus(scores)
   const round = Object.keys(scores).length + 1
 
   useEffect(() => () => {
@@ -84,7 +93,7 @@ export function YachtPage() {
       setRolling(false)
       setRolls((value) => value + 1)
       rollTimer.current = null
-    }, ROLL_DURATION_MS)
+    }, DICE_ROLL_DURATION_MS)
   }
 
   function chooseCategory(category: YachtCategory) {
@@ -127,14 +136,14 @@ export function YachtPage() {
   return (
     <div className="play-page yacht-page">
       <GameHeader title="Yacht Dice" rankedState={rankedState}>
-        <div className="yacht-total"><small>총점</small><strong>{total}<em>/297</em></strong></div>
+        <div className="yacht-total"><small>총점</small><strong>{total}<em>/{YACHT_MAX_SCORE}</em></strong></div>
       </GameHeader>
 
       <section className="yacht-layout page-wrap">
         <div className="dice-column">
           <div className="dice-stage">
             <DiceScene values={dice} held={held} rolling={rolling} rollNonce={rollNonce} onToggle={toggleHold} />
-            <div className="dice-stage-label">라운드 {Math.min(round, 12)}<span>/12</span></div>
+            <div className="dice-stage-label">라운드 {Math.min(round, YACHT_CATEGORIES.length)}<span>/{YACHT_CATEGORIES.length}</span></div>
             <div className="roll-indicator">{[1, 2, 3].map((roll) => <i className={roll <= rolls ? 'used' : ''} key={roll}>{roll}</i>)}</div>
           </div>
 
@@ -160,18 +169,30 @@ export function YachtPage() {
               const locked = scores[category.id]
               const candidate = rolls > 0 ? scoreYachtCategory(category.id, dice) : null
               return (
-                <button
-                  key={category.id}
-                  className={`${locked !== undefined ? 'locked' : ''} ${candidate === category.max ? 'max-candidate' : ''}`}
-                  onClick={() => chooseCategory(category.id)}
-                  disabled={locked !== undefined || rolls === 0 || rolling}
-                  aria-label={`${category.label}, ${category.hint}, ${locked !== undefined ? `${locked}점 기록됨` : candidate === null ? '굴린 뒤 선택 가능' : `현재 ${candidate}점`}`}
-                >
-                  <span className="category-index">{String(index + 1).padStart(2, '0')}</span>
-                  <strong>{category.label}</strong>
-                  <small>{category.hint}</small>
-                  <em>{locked !== undefined ? locked : candidate ?? '—'}</em>
-                </button>
+                <Fragment key={category.id}>
+                  {index === 6 && (
+                    <div
+                      className={`score-bonus-row ${upperBonus ? 'earned' : ''}`}
+                      aria-label={`상단 보너스, 1부터 6까지 합계 ${upperSubtotal}점, ${upperBonus ? '35점 획득' : `${YACHT_UPPER_BONUS_THRESHOLD - upperSubtotal}점 남음`}`}
+                    >
+                      <span className="category-index">B</span>
+                      <strong>상단 보너스</strong>
+                      <small>1–6 합계 63+</small>
+                      <em>{upperBonus || `${upperSubtotal}/63`}</em>
+                    </div>
+                  )}
+                  <button
+                    className={`${locked !== undefined ? 'locked' : ''} ${candidate === category.max ? 'max-candidate' : ''}`}
+                    onClick={() => chooseCategory(category.id)}
+                    disabled={locked !== undefined || rolls === 0 || rolling}
+                    aria-label={`${category.label}, ${category.hint}, ${locked !== undefined ? `${locked}점 기록됨` : candidate === null ? '굴린 뒤 선택 가능' : `현재 ${candidate}점`}`}
+                  >
+                    <span className="category-index">{String(index + 1).padStart(2, '0')}</span>
+                    <strong>{category.label}</strong>
+                    <small>{category.hint}</small>
+                    <em>{locked !== undefined ? locked : candidate ?? '—'}</em>
+                  </button>
+                </Fragment>
               )
             })}
           </div>
@@ -182,8 +203,8 @@ export function YachtPage() {
         <GameResultDialog
           titleId="yacht-result-title"
           score={total}
-          maxScore={297}
-          message="12개 족보를 모두 기록했습니다."
+          maxScore={YACHT_MAX_SCORE}
+          message="15개 족보와 상단 보너스를 모두 계산했습니다."
           saved={saved}
           onRestart={restart}
           accent="amber"
