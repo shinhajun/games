@@ -4,6 +4,7 @@ import { useProfile } from '../useProfile'
 import { GameHeader } from '../components/GameHeader'
 import { GameResultDialog } from '../components/GameResultDialog'
 import { DiceScene } from '../game/yacht/DiceScene'
+import { getYachtCelebration, type YachtCelebrationEvent } from '../game/yacht/celebration'
 import {
   scoreYachtCategory,
   totalYachtScore,
@@ -25,6 +26,7 @@ export function YachtPage() {
   const scoreRun = useRef<Promise<string> | null>(null)
   const pendingScore = useRef<ScoreSubmission | null>(null)
   const rollLaunchPending = useRef(false)
+  const celebrationSequence = useRef(0)
   const scoreRunRetryTimer = useRef<number | null>(null)
   const runGeneration = useRef(0)
   const [dice, setDice] = useState(freshDice)
@@ -35,6 +37,7 @@ export function YachtPage() {
   const [scores, setScores] = useState<Partial<Record<YachtCategory, number>>>({})
   const [selectedCategory, setSelectedCategory] = useState<YachtCategory | null>(null)
   const [scorecardOpen, setScorecardOpen] = useState(false)
+  const [celebration, setCelebration] = useState<YachtCelebrationEvent | null>(null)
   const [finished, setFinished] = useState(false)
   const [saved, setSaved] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const total = totalYachtScore(scores)
@@ -60,6 +63,12 @@ export function YachtPage() {
     window.addEventListener('keydown', closeOnEscape)
     return () => window.removeEventListener('keydown', closeOnEscape)
   }, [scorecardOpen])
+
+  useEffect(() => {
+    if (!celebration) return
+    const timer = window.setTimeout(() => setCelebration(null), 2600)
+    return () => window.clearTimeout(timer)
+  }, [celebration])
 
   function beginScoreRun() {
     if (scoreRun.current) return scoreRun.current
@@ -90,6 +99,7 @@ export function YachtPage() {
   function roll() {
     if (rollLaunchPending.current || rolling || rolls >= 3) return
     rollLaunchPending.current = true
+    setCelebration(null)
     setSelectedCategory(null)
     setScorecardOpen(false)
     if (startedAt.current === 0) {
@@ -101,6 +111,10 @@ export function YachtPage() {
   }
 
   function completePhysicalRoll(nextDice: number[]) {
+    const difficultCombination = getYachtCelebration(nextDice)
+    setCelebration(difficultCombination
+      ? { ...difficultCombination, id: ++celebrationSequence.current }
+      : null)
     setDice(nextDice)
     setSelectedCategory(null)
     setRolling(false)
@@ -111,6 +125,7 @@ export function YachtPage() {
   function selectCategory(category: YachtCategory) {
     if (rolls === 0 || rolling || scores[category] !== undefined) return
     setSelectedCategory(category)
+    setScorecardOpen(true)
   }
 
   function confirmCategory() {
@@ -128,6 +143,7 @@ export function YachtPage() {
     setRolls(0)
     setSelectedCategory(null)
     setScorecardOpen(false)
+    setCelebration(null)
     if (Object.keys(nextScores).length === YACHT_CATEGORIES.length) {
       const finalScore = totalYachtScore(nextScores)
       setFinished(true)
@@ -164,6 +180,7 @@ export function YachtPage() {
     setScores({})
     setSelectedCategory(null)
     setScorecardOpen(false)
+    setCelebration(null)
     setFinished(false)
     setSaved('idle')
   }
@@ -177,7 +194,14 @@ export function YachtPage() {
       <section className="yacht-layout page-wrap">
         <div className="dice-column">
           <div className="dice-stage">
-            <DiceScene values={dice} held={held} rolling={rolling} rollNonce={rollNonce} onToggle={toggleHold} onRollComplete={completePhysicalRoll} />
+            <DiceScene values={dice} held={held} rolling={rolling} rollNonce={rollNonce} celebration={celebration} onToggle={toggleHold} onRollComplete={completePhysicalRoll} />
+            {celebration && (
+              <div key={celebration.id} className={`yacht-celebration ${celebration.tier}`} aria-live="polite">
+                <span>RARE ROLL</span>
+                <strong>{celebration.label}</strong>
+                <small>{celebration.detail}</small>
+              </div>
+            )}
             <div className="dice-stage-label">라운드 {Math.min(round, YACHT_CATEGORIES.length)}<span>/{YACHT_CATEGORIES.length}</span></div>
             <div className="roll-indicator">{[1, 2, 3].map((roll) => <i className={roll <= rolls ? 'used' : ''} key={roll}>{roll}</i>)}</div>
           </div>
@@ -199,7 +223,7 @@ export function YachtPage() {
               aria-expanded={scorecardOpen}
               aria-controls="yacht-scorecard"
             >
-              <ClipboardList /> 점수판 <small>{Math.min(round, YACHT_CATEGORIES.length)}/{YACHT_CATEGORIES.length}</small>
+              <ClipboardList /> 크게 보기 <small>{Math.min(round, YACHT_CATEGORIES.length)}/{YACHT_CATEGORIES.length}</small>
             </button>
           </div>
         </div>

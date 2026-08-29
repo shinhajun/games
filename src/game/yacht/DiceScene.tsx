@@ -1,8 +1,9 @@
-import { ContactShadows, RoundedBox } from '@react-three/drei'
+import { ContactShadows, RoundedBox, Sparkles } from '@react-three/drei'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import RAPIER, { type RigidBody, type World } from '@dimforge/rapier3d-compat'
 import { useEffect, useLayoutEffect, useRef } from 'react'
-import { Group, Quaternion } from 'three'
+import { Group, MeshBasicMaterial, PointLight, Quaternion } from 'three'
+import type { YachtCelebrationEvent, YachtCelebrationTier } from './celebration'
 import { quaternionForTopFace, topFaceFromQuaternion } from './dicePhysics'
 
 const pipPatterns: Record<number, [number, number][]> = {
@@ -28,6 +29,7 @@ const LINEAR_STABLE_SPEED_SQUARED = 0.018
 const ANGULAR_STABLE_SPEED_SQUARED = 0.12
 const CONTAINMENT_WALL_HALF_HEIGHT = 1.3
 const CONTAINMENT_WALL_CENTER_Y = FELT_TOP_Y + CONTAINMENT_WALL_HALF_HEIGHT
+const CELEBRATION_DURATION = 2.35
 const FREE_REST_SLOTS: [number, number][] = [
   [-2.25, 0.38],
   [-1.12, -0.12],
@@ -439,25 +441,111 @@ function DiceTray() {
   )
 }
 
-function ResponsiveCamera() {
+const celebrationStyle: Record<YachtCelebrationTier, { color: string; particles: number; strength: number }> = {
+  rare: { color: '#8bd6ff', particles: 70, strength: 0.72 },
+  epic: { color: '#66d8ac', particles: 105, strength: 0.88 },
+  legendary: { color: '#f2c65d', particles: 145, strength: 1 },
+}
+
+function CelebrationEffects({ celebration }: { celebration: YachtCelebrationEvent }) {
+  const group = useRef<Group>(null)
+  const innerRing = useRef<MeshBasicMaterial>(null)
+  const outerRing = useRef<MeshBasicMaterial>(null)
+  const burstLight = useRef<PointLight>(null)
+  const elapsed = useRef(0)
+  const reducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const style = celebrationStyle[celebration.tier]
+
+  useFrame((_, delta) => {
+    if (!group.current) return
+    if (reducedMotion) {
+      group.current.scale.setScalar(1.1)
+      if (innerRing.current) innerRing.current.opacity = 0.42
+      if (outerRing.current) outerRing.current.opacity = 0.22
+      if (burstLight.current) burstLight.current.intensity = 3.5 * style.strength
+      return
+    }
+
+    elapsed.current = Math.min(elapsed.current + delta, CELEBRATION_DURATION)
+    const progress = elapsed.current / CELEBRATION_DURATION
+    const envelope = Math.sin(Math.PI * progress)
+    group.current.visible = progress < 1
+    group.current.rotation.y += delta * (0.55 + style.strength * 0.55)
+    group.current.scale.setScalar(0.62 + progress * 1.85)
+    if (innerRing.current) innerRing.current.opacity = envelope * 0.92
+    if (outerRing.current) outerRing.current.opacity = envelope * 0.54
+    if (burstLight.current) burstLight.current.intensity = envelope * 16 * style.strength
+  })
+
+  return (
+    <group ref={group} position={[0, 0.92, 0]}>
+      <pointLight ref={burstLight} color={style.color} distance={12} decay={1.8} />
+      <Sparkles
+        count={style.particles}
+        color={style.color}
+        opacity={0.95}
+        scale={[6.8, 2.6, 3.1]}
+        size={celebration.tier === 'legendary' ? 6.2 : 4.8}
+        speed={reducedMotion ? 0 : 2.1}
+        noise={[1.25, 1.7, 1.25]}
+      />
+      <mesh rotation={[Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[1.25, 0.035, 12, 72]} />
+        <meshBasicMaterial ref={innerRing} color={style.color} transparent opacity={0} depthWrite={false} />
+      </mesh>
+      <mesh rotation={[Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[1.75, 0.018, 10, 72]} />
+        <meshBasicMaterial ref={outerRing} color="#ffffff" transparent opacity={0} depthWrite={false} />
+      </mesh>
+    </group>
+  )
+}
+
+function ResponsiveCamera({ celebration }: { celebration: YachtCelebrationEvent | null }) {
   const { camera, size } = useThree()
+  const basePosition = useRef({ y: 6.65, z: 7.55 })
+  const celebrationElapsed = useRef(CELEBRATION_DURATION)
+  const reducedMotion = useRef(typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches)
 
   useLayoutEffect(() => {
     const aspect = size.width / Math.max(size.height, 1)
     const distanceScale = Math.max(1, Math.min(1.75, 0.96 / aspect))
-    camera.position.set(0, 0.15 + 6.5 * distanceScale, 7.55 * distanceScale)
+    basePosition.current = { y: 0.15 + 6.5 * distanceScale, z: 7.55 * distanceScale }
+    camera.position.set(0, basePosition.current.y, basePosition.current.z)
     camera.lookAt(0, 0.15, 0)
     camera.updateProjectionMatrix()
   }, [camera, size.height, size.width])
 
+  useEffect(() => {
+    celebrationElapsed.current = celebration ? 0 : CELEBRATION_DURATION
+    if (celebration) return
+    camera.position.set(0, basePosition.current.y, basePosition.current.z)
+    camera.lookAt(0, 0.15, 0)
+  }, [camera, celebration])
+
+  useFrame((_, delta) => {
+    if (!celebration || reducedMotion.current || celebrationElapsed.current >= CELEBRATION_DURATION) return
+    celebrationElapsed.current = Math.min(celebrationElapsed.current + delta, CELEBRATION_DURATION)
+    const progress = celebrationElapsed.current / CELEBRATION_DURATION
+    const envelope = Math.sin(Math.PI * progress)
+    const strength = celebrationStyle[celebration.tier].strength
+    camera.position.set(
+      0,
+      basePosition.current.y - (0.22 + Math.sin(progress * Math.PI * 2) * 0.06) * strength * envelope,
+      basePosition.current.z + 0.62 * strength * envelope,
+    )
+    camera.lookAt(0, 0.15 + 0.2 * strength * envelope, 0)
+  })
+
   return null
 }
 
-export function DiceScene({ values, held, rolling, rollNonce, onToggle, onRollComplete }: {
+export function DiceScene({ values, held, rolling, rollNonce, celebration, onToggle, onRollComplete }: {
   values: number[]
   held: boolean[]
   rolling: boolean
   rollNonce: number
+  celebration: YachtCelebrationEvent | null
   onToggle: (index: number) => void
   onRollComplete: (values: number[]) => void
 }) {
@@ -475,7 +563,7 @@ export function DiceScene({ values, held, rolling, rollNonce, onToggle, onRollCo
       <directionalLight castShadow position={[-3.5, 7.5, 4.8]} intensity={3.15} shadow-intensity={0.3} shadow-mapSize={[768, 768]} shadow-bias={-0.00035} />
       <pointLight position={[4.2, 3.2, -2.3]} intensity={5.8} distance={11} color="#f3c96a" />
       <pointLight position={[-4.2, 2.5, 1.6]} intensity={3.8} distance={10} color="#66d8ac" />
-      <ResponsiveCamera />
+      <ResponsiveCamera celebration={celebration} />
       <DiceTray />
       <DiceBodies
         values={values}
@@ -485,6 +573,7 @@ export function DiceScene({ values, held, rolling, rollNonce, onToggle, onRollCo
         onToggle={onToggle}
         onRollComplete={onRollComplete}
       />
+      {celebration && <CelebrationEffects key={celebration.id} celebration={celebration} />}
       <ContactShadows position={[0, FELT_TOP_Y + 0.002, 0]} scale={10} opacity={0.14} blur={4.2} far={1.35} />
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.52, 0]} receiveShadow>
         <planeGeometry args={[35, 35]} /><meshStandardMaterial color="#0e1210" roughness={1} />

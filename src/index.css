@@ -286,3 +286,57 @@ html:has(.game-shell),
   .game-shell .yacht-page .roll-button{grid-column:2;grid-row:1;height:41px}.game-shell .yacht-page .scorecard-toggle{grid-column:3;grid-row:1;height:41px}
   .game-shell .yacht-page .score-rows{grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:repeat(4,minmax(0,1fr))}
 }
+
+/* Difficult physical rolls get a short arcade burst without blocking the dice or controls. */
+.yacht-celebration{--celebration:#8bd6ff;position:absolute;inset:0;z-index:6;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;pointer-events:none;background:radial-gradient(circle at 50% 54%,color-mix(in srgb,var(--celebration) 24%,transparent),transparent 43%);animation:yachtCelebrationShell 2.6s ease-out forwards}
+.yacht-celebration:before,.yacht-celebration:after{content:'';position:absolute;left:50%;top:50%;width:min(52vw,440px);aspect-ratio:1;border:1px solid color-mix(in srgb,var(--celebration) 68%,transparent);border-radius:50%;box-shadow:0 0 50px color-mix(in srgb,var(--celebration) 22%,transparent);transform:translate(-50%,-50%) scale(.25);animation:yachtCelebrationRing 1.55s cubic-bezier(.12,.72,.2,1) forwards}
+.yacht-celebration:after{animation-delay:.18s}
+.yacht-celebration>span{position:relative;color:var(--celebration);font:700 8px/1 var(--mono);letter-spacing:.38em;text-shadow:0 0 18px var(--celebration);animation:yachtCelebrationCopy 2.25s ease-out forwards}
+.yacht-celebration>strong{position:relative;max-width:94%;color:#fff;text-align:center;font:800 clamp(28px,5vw,64px)/.95 var(--sans);letter-spacing:-.065em;text-shadow:0 0 12px var(--celebration),0 0 42px color-mix(in srgb,var(--celebration) 78%,transparent);animation:yachtCelebrationTitle 2.25s cubic-bezier(.14,.82,.26,1) forwards}
+.yacht-celebration>small{position:relative;max-width:85%;padding:6px 9px;color:#fff;background:rgba(5,13,10,.64);text-align:center;font-size:9px;font-weight:700;animation:yachtCelebrationCopy 2.25s ease-out forwards}
+.yacht-celebration.epic{--celebration:var(--green)}
+.yacht-celebration.legendary{--celebration:var(--amber)}
+@keyframes yachtCelebrationShell{0%{opacity:0}8%,68%{opacity:1}100%{opacity:0}}
+@keyframes yachtCelebrationRing{0%{opacity:0;transform:translate(-50%,-50%) scale(.25)}22%{opacity:.9}100%{opacity:0;transform:translate(-50%,-50%) scale(1.45)}}
+@keyframes yachtCelebrationTitle{0%{opacity:0;transform:scale(.68) translateY(16px)}14%{opacity:1;transform:scale(1.08) translateY(0)}26%,68%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(1.04) translateY(-8px)}}
+@keyframes yachtCelebrationCopy{0%,8%{opacity:0;transform:translateY(7px)}18%,72%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-5px)}}
+
+/* On phones the dice and a compact scorecard remain visible together; "크게 보기" is only an optional safe-entry view. */
+@media(max-width:860px){
+  .game-shell .yacht-layout{grid-template-columns:1fr;grid-template-rows:minmax(0,57%) minmax(0,43%)}
+  .game-shell .yacht-page .scorecard:not(.open){position:relative;z-index:auto;left:auto;right:auto;top:auto;bottom:auto;width:auto;height:100%;visibility:visible;pointer-events:auto;transform:none;transition:none;grid-template-rows:35px minmax(0,1fr)}
+  .game-shell .yacht-page .scorecard:not(.open).has-pending{grid-template-rows:35px minmax(0,1fr) 58px}
+  .game-shell .yacht-page .scorecard:not(.open)>header{padding:4px 9px}
+  .game-shell .yacht-page .scorecard:not(.open)>header h2{font-size:13px}
+  .game-shell .yacht-page .scorecard:not(.open)>header small,
+  .game-shell .yacht-page .scorecard:not(.open) .scorecard-close{display:none}
+  .game-shell .yacht-page .scorecard:not(.open) .score-rows{padding:3px;grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(8,minmax(0,1fr));gap:2px}
+  .game-shell .yacht-page .scorecard:not(.open) .score-rows button{padding:0 6px;grid-template-columns:minmax(0,1fr) 28px;gap:4px}
+  .game-shell .yacht-page .scorecard:not(.open) .score-rows strong{font-size:9px}
+  .game-shell .yacht-page .scorecard:not(.open) .score-rows em{font-size:12px}
+  .game-shell .yacht-page .scorecard:not(.open) .score-rows button.max-candidate:not(.locked) em{width:22px;height:22px}
+  .game-shell .yacht-page .scorecard:not(.open) .score-bonus-row{padding:0 6px;grid-template-columns:minmax(0,1fr) 28px;gap:4px}
+  .game-shell .yacht-page .scorecard:not(.open) .score-bonus-row strong{font-size:8px}
+  .game-shell .yacht-page .scorecard:not(.open) .score-bonus-row em{font-size:8px}
+  .game-shell .yacht-page .scorecard:not(.open) .score-bonus-row.earned em{font-size:11px}
+}
+
+@media(max-width:860px) and (max-height:620px) and (orientation:portrait){
+  .game-shell .yacht-layout{grid-template-rows:minmax(0,47%) minmax(0,53%)}
+  .game-shell .yacht-page .scorecard:not(.open){grid-template-rows:30px minmax(0,1fr)}
+}
+
+@media(max-width:860px) and (max-height:620px) and (orientation:landscape){
+  .game-shell .yacht-layout{grid-template-columns:minmax(0,1.2fr) minmax(300px,.8fr);grid-template-rows:minmax(0,1fr)}
+  .game-shell .yacht-page .scorecard:not(.open){grid-template-rows:30px minmax(0,1fr)}
+  .game-shell .yacht-page .scorecard:not(.open) .score-rows{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(8,minmax(0,1fr));gap:2px;padding:2px}
+  .game-shell .yacht-page .scorecard:not(.open) .score-rows button,
+  .game-shell .yacht-page .scorecard:not(.open) .score-bonus-row{padding-inline:5px}
+  .game-shell .yacht-page .scorecard:not(.open) .score-rows strong,
+  .game-shell .yacht-page .scorecard:not(.open) .score-bonus-row strong{font-size:8px}
+}
+
+@media(max-width:380px){
+  .game-shell .yacht-page .scorecard-toggle{white-space:nowrap}
+  .game-shell .yacht-page .scorecard-toggle small{display:none}
+}
