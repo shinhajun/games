@@ -9,7 +9,7 @@ import {
   type BilliardsSceneHandle,
   type StrokeStyle,
 } from '../game/billiards/BilliardsScene'
-import { cuePullFraction, powerFromCuePull } from '../game/billiards/controls'
+import { cuePullFraction, DEFAULT_CUE_ELEVATION, powerFromCuePull } from '../game/billiards/controls'
 import { PHYSICS, type BilliardsMode, type ShotVerdict, type Vec2 } from '../game/billiards/engine'
 import { BILLIARDS_STARTING_LIVES, settleBilliardsShot } from '../game/billiards/run'
 import { prepareCloudLeaderboard, startScoreRun, submitScore } from '../lib/leaderboard'
@@ -25,8 +25,6 @@ const strokeOptions: { id: StrokeStyle; label: string; detail: string }[] = [
   { id: 'normal', label: '기본', detail: '균형' },
   { id: 'punch', label: '끊어치기', detail: '짧고 강하게' },
 ]
-
-const DEFAULT_CUE_ELEVATION = 5
 
 interface AimGesture {
   pointerId: number
