@@ -1,8 +1,9 @@
 import { ContactShadows, RoundedBox } from '@react-three/drei'
 import { Canvas, useFrame } from '@react-three/fiber'
-import { useEffect, useMemo, useRef } from 'react'
-import { Group, Quaternion, Vector3 } from 'three'
-import { dieHalfExtents, quaternionForTopFace, topFaceFromQuaternion, uprightQuaternionForTopFace } from './dicePhysics'
+import RAPIER, { type RigidBody, type World } from '@dimforge/rapier3d-compat'
+import { useEffect, useRef } from 'react'
+import { Group, Quaternion } from 'three'
+import { quaternionForTopFace, topFaceFromQuaternion } from './dicePhysics'
 
 const pipPatterns: Record<number, [number, number][]> = {
   1: [[0, 0]],
@@ -15,14 +16,16 @@ const pipPatterns: Record<number, [number, number][]> = {
 
 const FELT_TOP_Y = 0.112
 const DIE_HALF_SIZE = 0.5
-const COLLISION_SKIN = 0.025
-const REST_CENTER_Y = FELT_TOP_Y + DIE_HALF_SIZE + COLLISION_SKIN
-const INNER_WALL_X = 3
-const INNER_WALL_Z = 1.72
-const COLLISION_DISTANCE = 1.02
-const MIN_SETTLE_TIME = 1.05
-const MAX_SETTLE_TIME = 2.85
-const SETTLE_ANIMATION_TIME = 0.28
+const DIE_CORNER_RADIUS = 0.145
+const DIE_CORE_HALF_SIZE = DIE_HALF_SIZE - DIE_CORNER_RADIUS
+const REST_CENTER_Y = FELT_TOP_Y + DIE_HALF_SIZE + 0.004
+const FIXED_TIMESTEP = 1 / 120
+const MAX_FRAME_DELTA = 0.1
+const MIN_ROLL_TIME = 0.7
+const MAX_ROLL_TIME = 6
+const REQUIRED_STABLE_TIME = 0.32
+const LINEAR_STABLE_SPEED_SQUARED = 0.018
+const ANGULAR_STABLE_SPEED_SQUARED = 0.12
 const FREE_REST_SLOTS: [number, number][] = [
   [-2.25, 0.38],
   [-1.12, -0.12],
@@ -31,15 +34,21 @@ const FREE_REST_SLOTS: [number, number][] = [
   [2.25, 0.34],
 ]
 
-interface DieBody {
-  position: Vector3
-  restPosition: Vector3
-  velocity: Vector3
-  angularVelocity: Vector3
-  restQuaternion: Quaternion
+interface DicePhysicsState {
+  world: World
+  bodies: RigidBody[]
+  accumulator: number
+  active: boolean
+  activeRollNonce: number
   elapsed: number
-  settleElapsed: number
-  result: number | null
+  stableFor: number[]
+}
+
+let rapierInitialization: Promise<void> | null = null
+
+function initializeRapier() {
+  rapierInitialization ??= RAPIER.init()
+  return rapierInitialization
 }
 
 function Pip({ position }: { position: [number, number, number] }) {
@@ -79,27 +88,157 @@ function entropySeed() {
   return Math.floor(Math.random() * 4294967296) >>> 0
 }
 
+function heldRestPosition(index: number) {
+  return { x: (index - 2) * 1.15, y: REST_CENTER_Y, z: -0.98 }
+}
+
 function freeRestPosition(index: number) {
   const [x, z] = FREE_REST_SLOTS[index]
-  return new Vector3(x, REST_CENTER_Y, z)
+  return { x, y: REST_CENTER_Y, z }
 }
 
-function heldRestPosition(index: number) {
-  return new Vector3((index - 2) * 1.15, REST_CENTER_Y, -0.98)
+function randomQuaternion(random: () => number) {
+  const u1 = random()
+  const u2 = random() * Math.PI * 2
+  const u3 = random() * Math.PI * 2
+  const firstRadius = Math.sqrt(1 - u1)
+  const secondRadius = Math.sqrt(u1)
+
+  return new Quaternion(
+    firstRadius * Math.sin(u2),
+    firstRadius * Math.cos(u2),
+    secondRadius * Math.sin(u3),
+    secondRadius * Math.cos(u3),
+  )
 }
 
-function createBody(index: number, value: number): DieBody {
-  const position = freeRestPosition(index)
+function createPhysicsState(values: number[], held: boolean[]): DicePhysicsState {
+  const world = new RAPIER.World({ x: 0, y: -24, z: 0 })
+  world.timestep = FIXED_TIMESTEP
+  world.numSolverIterations = 8
+  world.numAdditionalFrictionIterations = 8
+  world.integrationParameters.maxCcdSubsteps = 2
+
+  world.createCollider(
+    RAPIER.ColliderDesc.cuboid(3.93, 0.06, 1.715)
+      .setTranslation(0, 0.052, 0)
+      .setFriction(0.74)
+      .setRestitution(0.18),
+  )
+
+  const longRail = RAPIER.ColliderDesc.cuboid(4.31, 0.25, 0.175)
+    .setFriction(0.46)
+    .setRestitution(0.3)
+  world.createCollider(longRail.setTranslation(0, 0.19, -1.91))
+  world.createCollider(
+    RAPIER.ColliderDesc.cuboid(4.31, 0.25, 0.175)
+      .setTranslation(0, 0.19, 1.91)
+      .setFriction(0.46)
+      .setRestitution(0.3),
+  )
+  world.createCollider(
+    RAPIER.ColliderDesc.cuboid(0.175, 0.25, 1.74)
+      .setTranslation(-4.14, 0.19, 0)
+      .setFriction(0.46)
+      .setRestitution(0.3),
+  )
+  world.createCollider(
+    RAPIER.ColliderDesc.cuboid(0.175, 0.25, 1.74)
+      .setTranslation(4.14, 0.19, 0)
+      .setFriction(0.46)
+      .setRestitution(0.3),
+  )
+
+  const bodies = values.map((value, index) => {
+    const position = held[index] ? heldRestPosition(index) : freeRestPosition(index)
+    const rotation = quaternionForTopFace(value, index * 0.31)
+    const body = world.createRigidBody(
+      RAPIER.RigidBodyDesc.dynamic()
+        .setTranslation(position.x, position.y, position.z)
+        .setRotation(rotation)
+        .setLinearDamping(0.08)
+        .setAngularDamping(0.11)
+        .setCanSleep(true)
+        .setSleeping(true)
+        .setCcdEnabled(true),
+    )
+    world.createCollider(
+      RAPIER.ColliderDesc.roundCuboid(
+        DIE_CORE_HALF_SIZE,
+        DIE_CORE_HALF_SIZE,
+        DIE_CORE_HALF_SIZE,
+        DIE_CORNER_RADIUS,
+      )
+        .setMass(0.016)
+        .setFriction(0.58)
+        .setRestitution(0.26),
+      body,
+    )
+    if (held[index]) body.setBodyType(RAPIER.RigidBodyType.Fixed, false)
+    return body
+  })
+
   return {
-    position,
-    restPosition: position.clone(),
-    velocity: new Vector3(),
-    angularVelocity: new Vector3(),
-    restQuaternion: quaternionForTopFace(value, index * 0.31),
-    elapsed: MAX_SETTLE_TIME,
-    settleElapsed: SETTLE_ANIMATION_TIME,
-    result: value,
+    world,
+    bodies,
+    accumulator: 0,
+    active: false,
+    activeRollNonce: 0,
+    elapsed: 0,
+    stableFor: values.map(() => 0),
   }
+}
+
+function placeIdleBody(body: RigidBody, index: number, value: number, isHeld: boolean) {
+  const position = isHeld ? heldRestPosition(index) : freeRestPosition(index)
+  const rotation = quaternionForTopFace(value, index * 0.31)
+  body.setBodyType(isHeld ? RAPIER.RigidBodyType.Fixed : RAPIER.RigidBodyType.Dynamic, false)
+  body.setTranslation(position, false)
+  body.setRotation(rotation, false)
+  body.setLinvel({ x: 0, y: 0, z: 0 }, false)
+  body.setAngvel({ x: 0, y: 0, z: 0 }, false)
+  if (!isHeld) body.sleep()
+}
+
+function launchPhysicsRoll(
+  state: DicePhysicsState,
+  rollNonce: number,
+  values: number[],
+  held: boolean[],
+  reducedMotion: boolean,
+) {
+  if (state.activeRollNonce === rollNonce) return
+  state.activeRollNonce = rollNonce
+  state.active = true
+  state.accumulator = 0
+  state.elapsed = 0
+  state.stableFor.fill(0)
+
+  state.bodies.forEach((body, index) => {
+    if (held[index]) {
+      placeIdleBody(body, index, values[index], true)
+      return
+    }
+
+    const random = seededRandom(entropySeed() ^ (rollNonce * 7919) ^ (index * 104729))
+    const launchX = (index - 2) * 1.25 + (random() - 0.5) * 0.12
+    const launchZ = (index % 2 === 0 ? -0.7 : 0.58) + (random() - 0.5) * 0.1
+    const motionScale = reducedMotion ? 0.72 : 1
+    const horizontalX = ((-Math.sign(launchX) * (0.72 + random() * 1.15)) + (random() - 0.5) * 0.5) * motionScale
+    const horizontalZ = ((-Math.sign(launchZ) * (0.8 + random() * 1.2)) + (random() - 0.5) * 0.7) * motionScale
+    const rotation = randomQuaternion(random)
+
+    body.setBodyType(RAPIER.RigidBodyType.Dynamic, true)
+    body.setTranslation({ x: launchX, y: 1.4 + random() * 0.35, z: launchZ }, true)
+    body.setRotation(rotation, true)
+    body.setLinvel({ x: horizontalX, y: (3.8 + random() * 1.35) * motionScale, z: horizontalZ }, true)
+    body.setAngvel({
+      x: (random() - 0.5) * 42 * motionScale,
+      y: (random() - 0.5) * 48 * motionScale,
+      z: (random() - 0.5) * 42 * motionScale,
+    }, true)
+    body.wakeUp()
+  })
 }
 
 function DieVisual({ held }: { held: boolean }) {
@@ -135,218 +274,133 @@ function DiceBodies({ values, held, rolling, rollNonce, onToggle, onRollComplete
   onRollComplete: (values: number[]) => void
 }) {
   const groups = useRef<Array<Group | null>>([])
-  const bodies = useRef<DieBody[]>(values.map((value, index) => createBody(index, value)))
-  const heldPositions = useMemo(() => values.map((_, index) => heldRestPosition(index)), [values])
-  const initializedRollNonce = useRef(0)
-  const reportedRollNonce = useRef(0)
+  const physics = useRef<DicePhysicsState | null>(null)
+  const previousHeld = useRef([...held])
+  const rollNonceRef = useRef(rollNonce)
+  const rollingRef = useRef(rolling)
   const valuesRef = useRef(values)
   const heldRef = useRef(held)
   const onRollCompleteRef = useRef(onRollComplete)
   const reducedMotion = useRef(typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches)
-  const scratch = useMemo(() => ({
-    axis: new Vector3(),
-    delta: new Vector3(),
-    relative: new Vector3(),
-    impulse: new Vector3(),
-    rotation: new Quaternion(),
-    extents: new Vector3(),
-  }), [])
 
   useEffect(() => {
+    rollNonceRef.current = rollNonce
+    rollingRef.current = rolling
     valuesRef.current = values
     heldRef.current = held
     onRollCompleteRef.current = onRollComplete
-  }, [held, onRollComplete, values])
+  }, [held, onRollComplete, rollNonce, rolling, values])
 
   useEffect(() => {
-    if (rollNonce === 0 || initializedRollNonce.current === rollNonce) return
-    initializedRollNonce.current = rollNonce
-
-    bodies.current.forEach((body, index) => {
-      if (held[index]) {
-        body.result = values[index]
-        body.settleElapsed = SETTLE_ANIMATION_TIME
-        return
-      }
-
-      const random = seededRandom(entropySeed() ^ (rollNonce * 7919) ^ (index * 104729))
-      const group = groups.current[index]
-      body.position.set(
-        reducedMotion.current ? FREE_REST_SLOTS[index][0] : -2.9 + (index % 2) * 0.34 + random() * 0.13,
-        reducedMotion.current ? REST_CENTER_Y : 1.85 + index * 0.22 + random() * 0.42,
-        reducedMotion.current ? FREE_REST_SLOTS[index][1] : -0.86 + index * 0.39 + (random() - 0.5) * 0.2,
-      )
-      body.velocity.set(
-        reducedMotion.current ? 0 : 4.45 + random() * 1.5,
-        reducedMotion.current ? 0 : 1.35 + random() * 1.5,
-        reducedMotion.current ? 0 : (random() - 0.5) * 4.2,
-      )
-      body.angularVelocity.set(
-        reducedMotion.current ? 0 : (random() - 0.5) * 27,
-        reducedMotion.current ? 0 : (random() - 0.5) * 31,
-        reducedMotion.current ? 0 : (random() - 0.5) * 27,
-      )
-      body.elapsed = 0
-      body.settleElapsed = 0
-      body.result = null
-
-      if (group) {
-        group.position.copy(body.position)
-        scratch.axis.set(random() - 0.5, random() - 0.5, random() - 0.5).normalize()
-        group.quaternion.setFromAxisAngle(scratch.axis, random() * Math.PI * 2)
-        if (reducedMotion.current) {
-          body.result = topFaceFromQuaternion(group.quaternion)
-          body.restQuaternion.copy(uprightQuaternionForTopFace(group.quaternion))
-          body.restPosition.set(body.position.x, REST_CENTER_Y, body.position.z)
-        }
+    let cancelled = false
+    void initializeRapier().then(() => {
+      if (cancelled) return
+      const state = createPhysicsState(valuesRef.current, heldRef.current)
+      physics.current = state
+      state.bodies.forEach((body, index) => {
+        const group = groups.current[index]
+        if (!group) return
+        const position = body.translation()
+        const rotation = body.rotation()
+        group.position.set(position.x, position.y, position.z)
+        group.quaternion.set(rotation.x, rotation.y, rotation.z, rotation.w)
+      })
+      if (rollingRef.current && rollNonceRef.current > 0) {
+        launchPhysicsRoll(
+          state,
+          rollNonceRef.current,
+          valuesRef.current,
+          heldRef.current,
+          reducedMotion.current,
+        )
       }
     })
-  }, [held, rollNonce, scratch, values])
+
+    return () => {
+      cancelled = true
+      physics.current?.world.free()
+      physics.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    const state = physics.current
+    if (!state || !rolling || rollNonce === 0) return
+    launchPhysicsRoll(state, rollNonce, values, held, reducedMotion.current)
+  }, [held, rollNonce, rolling, values])
+
+  useEffect(() => {
+    const state = physics.current
+    if (!state || rolling) {
+      previousHeld.current = [...held]
+      return
+    }
+    held.forEach((isHeld, index) => {
+      if (isHeld === previousHeld.current[index]) return
+      placeIdleBody(state.bodies[index], index, values[index], isHeld)
+    })
+    previousHeld.current = [...held]
+  }, [held, rolling, values])
 
   useEffect(() => () => { document.body.style.cursor = '' }, [])
 
   useFrame((_, rawDelta) => {
-    const frameDelta = Math.min(rawDelta, 1 / 24)
-    const steps = Math.max(1, Math.ceil(frameDelta / (1 / 90)))
-    const dt = frameDelta / steps
+    const state = physics.current
+    if (!state) return
 
-    if (rolling) {
-      for (let step = 0; step < steps; step += 1) {
-        bodies.current.forEach((body, index) => {
-          if (held[index] || body.result !== null) return
-          const group = groups.current[index]
-          if (!group) return
-
-          body.elapsed += dt
-          body.velocity.y -= 18.2 * dt
-          body.position.addScaledVector(body.velocity, dt)
-
-          const angularSpeed = body.angularVelocity.length()
-          if (angularSpeed > 0.001) {
-            scratch.axis.copy(body.angularVelocity).multiplyScalar(1 / angularSpeed)
-            scratch.rotation.setFromAxisAngle(scratch.axis, angularSpeed * dt)
-            group.quaternion.premultiply(scratch.rotation)
-          }
-
-          dieHalfExtents(group.quaternion, DIE_HALF_SIZE, scratch.extents)
-          const floorCenter = FELT_TOP_Y + scratch.extents.y + COLLISION_SKIN
-          if (body.position.y < floorCenter) {
-            body.position.y = floorCenter
-            if (body.velocity.y < -0.38) {
-              body.velocity.y *= -0.46
-              body.angularVelocity.x += body.velocity.z * 0.68
-              body.angularVelocity.z -= body.velocity.x * 0.68
-            } else {
-              body.velocity.y = 0
-            }
-            const floorDrag = Math.exp(-dt * 3.5)
-            body.velocity.x *= floorDrag
-            body.velocity.z *= floorDrag
-            body.angularVelocity.multiplyScalar(Math.exp(-dt * 2.7))
-            body.angularVelocity.x += body.velocity.z * dt * 1.4
-            body.angularVelocity.z -= body.velocity.x * dt * 1.4
-          }
-
-          const maximumX = INNER_WALL_X - scratch.extents.x
-          const maximumZ = INNER_WALL_Z - scratch.extents.z
-          if (Math.abs(body.position.x) > maximumX) {
-            body.position.x = Math.sign(body.position.x) * maximumX
-            body.velocity.x = -body.velocity.x * 0.54
-            body.velocity.z *= 0.86
-            body.angularVelocity.z += body.velocity.x * 0.82
-          }
-          if (Math.abs(body.position.z) > maximumZ) {
-            body.position.z = Math.sign(body.position.z) * maximumZ
-            body.velocity.z = -body.velocity.z * 0.54
-            body.velocity.x *= 0.86
-            body.angularVelocity.x -= body.velocity.z * 0.82
-          }
-
-          const onFloor = body.position.y <= floorCenter + 0.004
-          const canSettle = body.elapsed >= MIN_SETTLE_TIME
-            && onFloor
-            && (body.elapsed >= MAX_SETTLE_TIME
-              || (body.velocity.lengthSq() < 0.2 && body.angularVelocity.lengthSq() < 1.45))
-          if (canSettle) {
-            body.result = topFaceFromQuaternion(group.quaternion)
-            body.restQuaternion.copy(uprightQuaternionForTopFace(group.quaternion))
-            body.restPosition.set(body.position.x, REST_CENTER_Y, body.position.z)
-            body.velocity.set(0, 0, 0)
-            body.angularVelocity.set(0, 0, 0)
-            body.settleElapsed = 0
-          }
-        })
-
-        for (let first = 0; first < bodies.current.length; first += 1) {
-          for (let second = first + 1; second < bodies.current.length; second += 1) {
-            const firstBody = bodies.current[first]
-            const secondBody = bodies.current[second]
-            const firstStatic = held[first] || firstBody.result !== null
-            const secondStatic = held[second] || secondBody.result !== null
-            if (firstStatic && secondStatic) continue
-
-            scratch.delta.subVectors(secondBody.position, firstBody.position)
-            const distance = scratch.delta.length()
-            if (distance <= 0.001 || distance >= COLLISION_DISTANCE) continue
-            scratch.delta.multiplyScalar(1 / distance)
-            const firstInverseMass = firstStatic ? 0 : 1
-            const secondInverseMass = secondStatic ? 0 : 1
-            const inverseMass = firstInverseMass + secondInverseMass
-            const overlap = COLLISION_DISTANCE - distance
-            firstBody.position.addScaledVector(scratch.delta, -overlap * firstInverseMass / inverseMass)
-            secondBody.position.addScaledVector(scratch.delta, overlap * secondInverseMass / inverseMass)
-            scratch.relative.subVectors(secondBody.velocity, firstBody.velocity)
-            const closingSpeed = scratch.relative.dot(scratch.delta)
-            if (closingSpeed >= 0) continue
-            const impulseMagnitude = -(1 + 0.44) * closingSpeed / inverseMass
-            scratch.impulse.copy(scratch.delta).multiplyScalar(impulseMagnitude)
-            firstBody.velocity.addScaledVector(scratch.impulse, -firstInverseMass)
-            secondBody.velocity.addScaledVector(scratch.impulse, secondInverseMass)
-            firstBody.angularVelocity.addScaledVector(scratch.delta, -closingSpeed * 0.58 * firstInverseMass)
-            secondBody.angularVelocity.addScaledVector(scratch.delta, closingSpeed * 0.58 * secondInverseMass)
-          }
-        }
+    let simulatedTime = 0
+    if (state.active) {
+      state.accumulator = Math.min(state.accumulator + Math.min(rawDelta, MAX_FRAME_DELTA), MAX_FRAME_DELTA)
+      while (state.accumulator >= FIXED_TIMESTEP) {
+        state.world.step()
+        state.accumulator -= FIXED_TIMESTEP
+        simulatedTime += FIXED_TIMESTEP
       }
+      state.elapsed += simulatedTime
     }
 
-    bodies.current.forEach((body, index) => {
+    state.bodies.forEach((body, index) => {
       const group = groups.current[index]
       if (!group) return
-
-      if (held[index] || body.result !== null || !rolling) {
-        if (body.result !== null && rolling && !held[index]) body.settleElapsed += frameDelta
-        const targetPosition = held[index] ? heldPositions[index] : body.restPosition
-        const blend = 1 - Math.exp(-frameDelta * (rolling ? 18 : 11))
-        body.position.lerp(targetPosition, blend)
-        group.quaternion.slerp(body.restQuaternion, blend)
-
-        dieHalfExtents(group.quaternion, DIE_HALF_SIZE, scratch.extents)
-        body.position.y = Math.max(body.position.y, FELT_TOP_Y + scratch.extents.y + COLLISION_SKIN)
-      }
-      group.position.copy(body.position)
+      const position = body.translation()
+      const rotation = body.rotation()
+      group.position.set(position.x, position.y, position.z)
+      group.quaternion.set(rotation.x, rotation.y, rotation.z, rotation.w)
     })
 
-    if (rolling
-      && rollNonce !== 0
-      && initializedRollNonce.current === rollNonce
-      && reportedRollNonce.current !== rollNonce) {
-      const complete = bodies.current.every((body, index) => heldRef.current[index]
-        || (body.result !== null && body.settleElapsed >= SETTLE_ANIMATION_TIME))
-      if (complete) {
-        reportedRollNonce.current = rollNonce
-        const nextValues = valuesRef.current.map((value, index) => heldRef.current[index]
-          ? value
-          : bodies.current[index].result ?? value)
-        onRollCompleteRef.current(nextValues)
-      }
-    }
+    if (!state.active || state.elapsed < MIN_ROLL_TIME) return
+
+    const settled = state.bodies.map((body, index) => {
+      if (heldRef.current[index]) return true
+      const linearVelocity = body.linvel()
+      const angularVelocity = body.angvel()
+      const isStable = body.isSleeping()
+        || ((linearVelocity.x ** 2 + linearVelocity.y ** 2 + linearVelocity.z ** 2) < LINEAR_STABLE_SPEED_SQUARED
+          && (angularVelocity.x ** 2 + angularVelocity.y ** 2 + angularVelocity.z ** 2) < ANGULAR_STABLE_SPEED_SQUARED)
+      state.stableFor[index] = isStable ? state.stableFor[index] + simulatedTime : 0
+      return body.isSleeping() || state.stableFor[index] >= REQUIRED_STABLE_TIME
+    }).every(Boolean)
+    const timedOutOnTray = state.elapsed >= MAX_ROLL_TIME
+      && state.bodies.every((body, index) => heldRef.current[index] || body.translation().y < 0.9)
+    if (!settled && !timedOutOnTray) return
+
+    state.active = false
+    state.bodies.forEach((body, index) => {
+      if (!heldRef.current[index]) body.sleep()
+    })
+    const nextValues = valuesRef.current.map((value, index) => {
+      if (heldRef.current[index]) return value
+      const rotation = state.bodies[index].rotation()
+      return topFaceFromQuaternion(new Quaternion(rotation.x, rotation.y, rotation.z, rotation.w))
+    })
+    onRollCompleteRef.current(nextValues)
   })
 
   return values.map((_, index) => (
     <group
       key={index}
       ref={(node) => { groups.current[index] = node }}
-      position={freeRestPosition(index)}
+      position={[FREE_REST_SLOTS[index][0], REST_CENTER_Y, FREE_REST_SLOTS[index][1]]}
       onClick={(event) => { event.stopPropagation(); onToggle(index) }}
       onPointerEnter={(event) => { event.stopPropagation(); document.body.style.cursor = 'pointer' }}
       onPointerLeave={() => { document.body.style.cursor = '' }}
