@@ -19,7 +19,7 @@ import {
 } from '../game/billiards/controls'
 import { PHYSICS, type BilliardsMode, type ShotVerdict, type Vec2 } from '../game/billiards/engine'
 import { BILLIARDS_STARTING_LIVES, settleBilliardsShot } from '../game/billiards/run'
-import { startScoreRun, submitScore } from '../lib/leaderboard'
+import { saveScore, startScoreRun } from '../lib/leaderboard'
 import { nowMs } from '../lib/time'
 import type { ScoreSubmission } from '../types'
 
@@ -242,15 +242,20 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
 
   function saveFinalScore() {
     const submission = pendingScore.current
-    const cloudRun = scoreRun.current
-    if (!profile || !submission || !cloudRun) {
+    if (!profile || !submission) {
       setSaved('error')
       return
     }
     setSaved('saving')
-    void cloudRun.then((runId) => submitScore(profile, submission, runId))
-      .then(() => setSaved('saved'))
-      .catch(() => setSaved('error'))
+    void saveScore(profile, submission, scoreRun.current)
+      .then((runId) => {
+        scoreRun.current = Promise.resolve(runId)
+        setSaved('saved')
+      })
+      .catch(() => {
+        scoreRun.current = null
+        setSaved('error')
+      })
   }
 
   function restart() {

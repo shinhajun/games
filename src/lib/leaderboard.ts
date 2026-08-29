@@ -113,3 +113,43 @@ export async function submitScore(profile: PlayerProfile, run: ScoreSubmission, 
     throw error
   }
 }
+
+async function submitScoreWithRetry(profile: PlayerProfile, run: ScoreSubmission, runId: string) {
+  try {
+    await submitScore(profile, run, runId)
+  } catch {
+    // A lost response can leave a successfully consumed token looking failed
+    // to the browser. The server treats an identical retry as idempotent.
+    await Promise.resolve()
+    await submitScore(profile, run, runId)
+  }
+}
+
+export async function saveScore(
+  profile: PlayerProfile,
+  run: ScoreSubmission,
+  existingRun?: Promise<string> | null,
+): Promise<string> {
+  let runId: string | null = null
+  if (existingRun) {
+    try {
+      runId = await existingRun
+    } catch {
+      runId = null
+    }
+  }
+
+  if (runId) {
+    try {
+      await submitScoreWithRetry(profile, run, runId)
+      return runId
+    } catch {
+      // The original token may never have reached the browser, may belong to
+      // an expired auth session, or may already be consumed. Rotate once.
+    }
+  }
+
+  const replacementRunId = await startScoreRun(run.game)
+  await submitScoreWithRetry(profile, run, replacementRunId)
+  return replacementRunId
+}

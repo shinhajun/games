@@ -59,4 +59,56 @@ describe('Supabase leaderboard connection', () => {
     await expect(getLeaderboard('three-cushion')).rejects.toBe(rpcError)
     expect(rpc).toHaveBeenCalledWith('get_arcade_leaderboard', { p_game: 'three-cushion', p_limit: 20 })
   })
+
+  it('creates a replacement run when the original run never became available', async () => {
+    vi.stubGlobal('localStorage', createStorage())
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: 'replacement-run', error: null, status: 200 })
+      .mockResolvedValueOnce({ data: null, error: null, status: 204 })
+    const { saveScore } = await loadLeaderboard({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'valid-user' } }, error: null }),
+      },
+      rpc,
+    })
+    const profile = { id: 'browser-profile', name: '저장검증' }
+    const submission = { game: 'yacht' as const, score: 120, durationMs: 18_500 }
+
+    await expect(saveScore(profile, submission, Promise.reject(new Error('start failed'))))
+      .resolves.toBe('replacement-run')
+    expect(rpc).toHaveBeenNthCalledWith(1, 'start_arcade_run', { p_game: 'yacht' })
+    expect(rpc).toHaveBeenNthCalledWith(2, 'submit_arcade_score', {
+      p_display_name: '저장검증',
+      p_game: 'yacht',
+      p_score: 120,
+      p_duration_ms: 18_500,
+      p_run_id: 'replacement-run',
+    })
+  })
+
+  it('retries the same token, then rotates it when submission keeps failing', async () => {
+    vi.stubGlobal('localStorage', createStorage())
+    const consumedError = { name: 'PostgrestError', status: 400, message: 'invalid or consumed run' }
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: null, error: consumedError, status: 400 })
+      .mockResolvedValueOnce({ data: null, error: consumedError, status: 400 })
+      .mockResolvedValueOnce({ data: 'fresh-run', error: null, status: 200 })
+      .mockResolvedValueOnce({ data: null, error: null, status: 204 })
+    const { saveScore } = await loadLeaderboard({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'valid-user' } }, error: null }),
+      },
+      rpc,
+    })
+    const profile = { id: 'browser-profile', name: '재시도검증' }
+    const submission = { game: 'four-ball' as const, score: 17, durationMs: 24_000 }
+
+    await expect(saveScore(profile, submission, Promise.resolve('old-run'))).resolves.toBe('fresh-run')
+    expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+      'submit_arcade_score',
+      'submit_arcade_score',
+      'start_arcade_run',
+      'submit_arcade_score',
+    ])
+  })
 })

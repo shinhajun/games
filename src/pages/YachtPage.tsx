@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
-import { Check, ClipboardList, Dice5, Hand, X } from 'lucide-react'
+import { Check, Dice5, Hand } from 'lucide-react'
 import { useProfile } from '../useProfile'
 import { GameHeader } from '../components/GameHeader'
 import { GameResultDialog } from '../components/GameResultDialog'
@@ -15,7 +15,7 @@ import {
   YACHT_UPPER_BONUS_THRESHOLD,
   type YachtCategory,
 } from '../game/yacht/scoring'
-import { startScoreRun, submitScore } from '../lib/leaderboard'
+import { saveScore, startScoreRun } from '../lib/leaderboard'
 import { nowMs } from '../lib/time'
 import type { ScoreSubmission } from '../types'
 
@@ -36,7 +36,6 @@ export function YachtPage() {
   const [rolling, setRolling] = useState(false)
   const [scores, setScores] = useState<Partial<Record<YachtCategory, number>>>({})
   const [selectedCategory, setSelectedCategory] = useState<YachtCategory | null>(null)
-  const [scorecardOpen, setScorecardOpen] = useState(false)
   const [celebration, setCelebration] = useState<YachtCelebrationEvent | null>(null)
   const [finished, setFinished] = useState(false)
   const [saved, setSaved] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
@@ -54,15 +53,14 @@ export function YachtPage() {
   }, [])
 
   useEffect(() => {
-    if (!scorecardOpen) return
+    if (!selectedCategory) return
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
       setSelectedCategory(null)
-      setScorecardOpen(false)
     }
     window.addEventListener('keydown', closeOnEscape)
     return () => window.removeEventListener('keydown', closeOnEscape)
-  }, [scorecardOpen])
+  }, [selectedCategory])
 
   useEffect(() => {
     if (!celebration) return
@@ -101,7 +99,6 @@ export function YachtPage() {
     rollLaunchPending.current = true
     setCelebration(null)
     setSelectedCategory(null)
-    setScorecardOpen(false)
     if (startedAt.current === 0) {
       startedAt.current = nowMs()
     }
@@ -125,7 +122,6 @@ export function YachtPage() {
   function selectCategory(category: YachtCategory) {
     if (rolls === 0 || rolling || scores[category] !== undefined) return
     setSelectedCategory(category)
-    setScorecardOpen(true)
   }
 
   function confirmCategory() {
@@ -142,7 +138,6 @@ export function YachtPage() {
     setHeld([false, false, false, false, false])
     setRolls(0)
     setSelectedCategory(null)
-    setScorecardOpen(false)
     setCelebration(null)
     if (Object.keys(nextScores).length === YACHT_CATEGORIES.length) {
       const finalScore = totalYachtScore(nextScores)
@@ -154,15 +149,20 @@ export function YachtPage() {
 
   function saveFinalScore() {
     const submission = pendingScore.current
-    const cloudRun = scoreRun.current
-    if (!profile || !submission || !cloudRun) {
+    if (!profile || !submission) {
       setSaved('error')
       return
     }
     setSaved('saving')
-    void cloudRun.then((runId) => submitScore(profile, submission, runId))
-      .then(() => setSaved('saved'))
-      .catch(() => setSaved('error'))
+    void saveScore(profile, submission, scoreRun.current)
+      .then((runId) => {
+        scoreRun.current = Promise.resolve(runId)
+        setSaved('saved')
+      })
+      .catch(() => {
+        scoreRun.current = null
+        setSaved('error')
+      })
   }
 
   function restart() {
@@ -179,7 +179,6 @@ export function YachtPage() {
     setRolls(0)
     setScores({})
     setSelectedCategory(null)
-    setScorecardOpen(false)
     setCelebration(null)
     setFinished(false)
     setSaved('idle')
@@ -217,35 +216,16 @@ export function YachtPage() {
             <button className="roll-button" onClick={roll} disabled={rolling || rolls >= 3}>
               {rolling ? <><span className="button-loader" /> 굴리는 중</> : rolls === 0 ? <><Dice5 /> 주사위 굴리기</> : rolls < 3 ? <><Dice5 /> 다시 굴리기 <small>{3 - rolls}회 남음</small></> : <><Hand /> 점수를 선택하세요</>}
             </button>
-            <button
-              className="scorecard-toggle"
-              onClick={() => setScorecardOpen(true)}
-              aria-expanded={scorecardOpen}
-              aria-controls="yacht-scorecard"
-            >
-              <ClipboardList /> 크게 보기 <small>{Math.min(round, YACHT_CATEGORIES.length)}/{YACHT_CATEGORIES.length}</small>
-            </button>
           </div>
         </div>
 
-        <button
-          className={`scorecard-backdrop ${scorecardOpen ? 'open' : ''}`}
-          onClick={() => { setSelectedCategory(null); setScorecardOpen(false) }}
-          aria-label="점수판 닫기"
-          tabIndex={scorecardOpen ? 0 : -1}
-        />
         <aside
           id="yacht-scorecard"
-          className={`scorecard ${scorecardOpen ? 'open' : ''} ${selectedCategory ? 'has-pending' : ''}`}
+          className="scorecard"
           aria-label="Yacht 점수판"
         >
           <header>
             <div><h2>점수판</h2><small>족보 선택 후 확인해야 기록됩니다.</small></div>
-            <button
-              className="scorecard-close"
-              onClick={() => { setSelectedCategory(null); setScorecardOpen(false) }}
-              aria-label="점수판 닫기"
-            ><X /></button>
           </header>
           <div className="scorecard-labels"><span>족보</span><span>조건</span><span>점수</span></div>
           <div className="score-rows">
@@ -281,15 +261,29 @@ export function YachtPage() {
               )
             })}
           </div>
-          {selectedCategoryInfo && selectedCategoryScore !== null && (
-            <div className="score-confirm">
-              <div><small>기록 전 확인</small><strong>{selectedCategoryInfo.label} <em>{selectedCategoryScore}점</em></strong></div>
-              <button className="score-confirm-cancel" onClick={() => setSelectedCategory(null)}>취소</button>
-              <button className="score-confirm-submit" onClick={confirmCategory}>이 점수 기록</button>
-            </div>
-          )}
         </aside>
       </section>
+
+      {selectedCategoryInfo && selectedCategoryScore !== null && (
+        <div className="score-confirm-overlay" onClick={() => setSelectedCategory(null)}>
+          <div
+            className="score-confirm-dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="score-confirm-title"
+            aria-describedby="score-confirm-description"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <small>점수 기록</small>
+            <strong id="score-confirm-title">{selectedCategoryInfo.label} <em>{selectedCategoryScore}점</em></strong>
+            <p id="score-confirm-description">이 점수로 기록할까요?</p>
+            <div>
+              <button className="score-confirm-cancel" onClick={() => setSelectedCategory(null)}>취소</button>
+              <button className="score-confirm-submit" onClick={confirmCategory} autoFocus>기록하기</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {finished && (
         <GameResultDialog
