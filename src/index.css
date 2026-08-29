@@ -162,18 +162,32 @@ html:has(.game-shell),
   .game-shell .yacht-page .scorecard{grid-template-rows:30px minmax(0,1fr)}
 }
 
-/* The cue angle is a direct rail control; the 3D ball itself owns the strike-point input. */
-.shot-rail{grid-template-rows:50px 58px auto minmax(170px,1fr)}
-.rail-elevation{min-width:0;padding:6px 4px;display:grid;grid-template-rows:auto 12px auto;gap:4px;align-items:center;border-block:1px solid var(--line);color:var(--faint)}
-.rail-elevation span{display:flex;align-items:baseline;justify-content:space-between;gap:3px}.rail-elevation small{font:600 7px/1 var(--sans)}.rail-elevation strong{color:var(--amber);font:500 11px/1 var(--mono)}.rail-elevation input{height:12px;margin:0;background:linear-gradient(90deg,var(--green),var(--amber),var(--coral))}.rail-elevation input::-webkit-slider-thumb{width:13px;height:13px;border-width:2px}.rail-elevation em{color:var(--faint);text-align:center;font:600 7px/1 var(--sans)}
+/* Cue elevation stays visible as a physical side view and never inherits the browser's wide range input. */
+.shot-rail{grid-template-rows:50px 86px auto minmax(170px,1fr);overflow:hidden}
+.rail-elevation{--cue-elevation:0deg;--cue-elevation-progress:0%;min-width:0;width:100%;padding:6px 4px;overflow:hidden;display:grid;grid-template-rows:auto minmax(28px,1fr) 16px auto;gap:2px;align-items:center;border-block:1px solid var(--line);color:var(--faint)}
+.rail-elevation-heading{min-width:0;display:flex;align-items:baseline;justify-content:space-between;gap:3px}.rail-elevation-heading small{font:700 7px/1 var(--sans)}.rail-elevation-heading strong{color:var(--amber);font:500 11px/1 var(--mono)}
+.rail-elevation-preview{position:relative;min-width:0;width:100%;height:100%;min-height:28px;overflow:hidden;display:block;background:radial-gradient(circle at 14px calc(100% - 8px),rgba(242,239,230,.08),transparent 19px)}
+.rail-elevation-ball{position:absolute;z-index:2;left:7px;bottom:2px;width:13px;height:13px;border:1px solid rgba(242,239,230,.8);border-radius:50%;background:radial-gradient(circle at 35% 28%,#fff,#d9d6cc 58%,#8c928d);box-shadow:0 2px 7px rgba(0,0,0,.45)}
+.rail-elevation-cue{position:absolute;z-index:3;left:17px;bottom:8px;width:calc(100% - 20px);height:3px;border-radius:3px;background:linear-gradient(90deg,#75a9a4 0 8%,#d7aa65 9% 72%,#75401f 73%);box-shadow:0 2px 5px rgba(0,0,0,.38);transform:rotate(var(--cue-elevation));transform-origin:left center;transition:transform .12s ease}
+.rail-elevation-arc{position:absolute;left:13px;bottom:7px;width:29px;height:29px;border-top:1px dashed rgba(242,198,93,.34);border-radius:50%;transform:rotate(-45deg)}
+.rail-elevation-slider{display:block;width:100%;max-width:100%;min-width:0;height:16px;margin:0;padding:6px 0;-webkit-appearance:none;appearance:none;color:var(--amber);background:transparent;accent-color:var(--amber)}
+.rail-elevation-slider::-webkit-slider-runnable-track{width:100%;height:3px;border-radius:4px;background:linear-gradient(90deg,var(--amber) 0 var(--cue-elevation-progress),rgba(242,239,230,.18) var(--cue-elevation-progress) 100%)}
+.rail-elevation-slider::-webkit-slider-thumb{width:13px;height:13px;margin-top:-5px;border:2px solid #07120e;border-radius:50%;-webkit-appearance:none;appearance:none;background:var(--amber);box-shadow:0 0 0 1px rgba(242,198,93,.48)}
+.rail-elevation-slider::-moz-range-track{height:3px;border:0;border-radius:4px;background:rgba(242,239,230,.18)}
+.rail-elevation-slider::-moz-range-progress{height:3px;border-radius:4px;background:var(--amber)}
+.rail-elevation-slider::-moz-range-thumb{width:11px;height:11px;border:2px solid #07120e;border-radius:50%;background:var(--amber);box-shadow:0 0 0 1px rgba(242,198,93,.48)}
+.rail-elevation-scale{min-width:0;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:2px;font:500 6px/1 var(--mono)}.rail-elevation-scale i{font-style:normal}.rail-elevation-scale em{overflow:hidden;color:var(--amber);text-align:center;text-overflow:ellipsis;white-space:nowrap;font:700 6px/1 var(--sans)}
 .rail-strokes{border-top:0}
 
 @media(max-width:860px){
-  .shot-rail{grid-template-rows:45px 52px auto minmax(160px,1fr)}
+  .shot-rail{grid-template-rows:45px 80px auto minmax(144px,1fr)}
   .rail-elevation{padding-inline:2px}
+  .game-shell .billiards-page .billiards-layout{--shot-rail-width:78px;--shot-rail-edge:max(6px,env(safe-area-inset-right))}
+  .game-shell .billiards-page .table-stage{width:calc(100% - var(--shot-rail-width) - var(--shot-rail-edge))}
+  .game-shell .billiards-page .shot-rail{right:var(--shot-rail-edge);width:var(--shot-rail-width);max-width:calc(100% - var(--shot-rail-edge) * 2)}
 }
 
 @media(max-height:620px) and (max-width:860px){
-  .shot-rail{grid-template-rows:34px 38px 88px minmax(72px,1fr)}
-  .rail-elevation{padding:2px;grid-template-rows:auto 9px;gap:2px}.rail-elevation small,.rail-elevation em{display:none}.rail-elevation strong{font-size:9px}.rail-elevation input{height:9px}
+  .shot-rail{grid-template-rows:34px 50px 88px minmax(72px,1fr)}
+  .rail-elevation{padding:2px;grid-template-rows:auto minmax(18px,1fr) 11px;gap:1px}.rail-elevation-heading small,.rail-elevation-scale{display:none}.rail-elevation-heading{justify-content:center}.rail-elevation-heading strong{font-size:9px}.rail-elevation-preview{min-height:18px}.rail-elevation-ball{left:8px;bottom:1px;width:10px;height:10px}.rail-elevation-cue{left:16px;bottom:6px}.rail-elevation-arc{left:12px;bottom:4px;width:22px;height:22px}.rail-elevation-slider{height:11px;padding:4px 0}
 }

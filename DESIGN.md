@@ -82,6 +82,7 @@ Hajun Arcade is a compact, premium game room: dark green felt, warm brass, preci
 
 - Table consumes all area below the HUD.
 - Shot rail stays directly on the right edge, always visible, with 0–45° cue elevation, stroke, and pull-release controls.
+- Cue elevation includes a compact physical side preview: the rendered cue rises around the ball as the 0–45° value changes. Its native range input must be explicitly constrained to the rail width on mobile.
 - The strike point is a 3D reticle clamped to the physical cue-ball surface; dragging it moves the rendered cue tip and the impact vector together.
 - The launch guide follows the predicted initial ball vector, including the small immediate squirt from side tip offset.
 - Table annotations avoid the rail safe zone.
@@ -134,6 +135,7 @@ Hajun Arcade is a compact, premium game room: dark green felt, warm brass, preci
 - Home uses a normal top app bar, a dense single-column game list that exposes all three choices in the initial portrait viewport, and a single-column leaderboard list. It must not add a fixed bottom navigation bar.
 - Play HUD: approximately 64–68 px.
 - Billiards remains stage-first with the narrow direct rail.
+- The billiards rail reserves its own viewport width and right safe-area inset; neither the angle slider nor any rail child may cross the screen edge.
 - Yacht stacks dice/action above the score decision grid; both must fit within the remaining dynamic viewport.
 
 ### Short mobile landscape (`height <= 620px`)

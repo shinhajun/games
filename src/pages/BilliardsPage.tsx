@@ -3,6 +3,7 @@ import { Check, ChevronsDown, Eye, Heart, X } from 'lucide-react'
 import { useProfile } from '../useProfile'
 import { GameHeader, type RankedState } from '../components/GameHeader'
 import { GameResultDialog } from '../components/GameResultDialog'
+import { CueElevationControl } from '../components/CueElevationControl'
 import {
   BilliardsScene,
   type BilliardsSceneHandle,
@@ -332,20 +333,12 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
             <span>{view === 'aim' ? '테이블' : '선수뷰'}</span>
           </button>
 
-          <label className="rail-elevation">
-            <span><small>큐 각도</small><strong>{elevation}°</strong></span>
-            <input
-              type="range"
-              min="0"
-              max={PHYSICS.maximumCueElevation}
-              step="1"
-              value={elevation}
-              onChange={(event) => setElevation(Number(event.target.value))}
-              disabled={shooting}
-              aria-label="큐 세우기 각도"
-            />
-            <em>{elevation < 8 ? '낮게' : elevation < 24 ? '세워치기' : '마세'}</em>
-          </label>
+          <CueElevationControl
+            value={elevation}
+            max={PHYSICS.maximumCueElevation}
+            disabled={shooting}
+            onChange={setElevation}
+          />
 
           <div className="rail-strokes" role="group" aria-label="스트로크 선택">
             <small>스트로크</small>
