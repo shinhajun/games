@@ -17,18 +17,18 @@ const FELT_TOP_Y = 0.112
 const DIE_HALF_SIZE = 0.5
 const COLLISION_SKIN = 0.025
 const REST_CENTER_Y = FELT_TOP_Y + DIE_HALF_SIZE + COLLISION_SKIN
-const INNER_WALL_X = 3.45
+const INNER_WALL_X = 3
 const INNER_WALL_Z = 1.72
 const COLLISION_DISTANCE = 1.02
 const MIN_SETTLE_TIME = 1.05
 const MAX_SETTLE_TIME = 2.85
 const SETTLE_ANIMATION_TIME = 0.28
 const FREE_REST_SLOTS: [number, number][] = [
-  [-2.55, 0.38],
-  [-1.28, -0.12],
+  [-2.25, 0.38],
+  [-1.12, -0.12],
   [0, 0.43],
-  [1.34, -0.18],
-  [2.58, 0.34],
+  [1.12, -0.18],
+  [2.25, 0.34],
 ]
 
 interface DieBody {
@@ -85,7 +85,7 @@ function freeRestPosition(index: number) {
 }
 
 function heldRestPosition(index: number) {
-  return new Vector3((index - 2) * 1.35, REST_CENTER_Y, -0.98)
+  return new Vector3((index - 2) * 1.15, REST_CENTER_Y, -0.98)
 }
 
 function createBody(index: number, value: number): DieBody {
