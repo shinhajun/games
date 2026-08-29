@@ -1,12 +1,29 @@
+import { useEffect, useState } from 'react'
 import { Cloud, Gamepad2, Trophy } from 'lucide-react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useProfile } from '../useProfile'
-import { isCloudConnected } from '../lib/leaderboard'
+import { prepareCloudLeaderboard } from '../lib/leaderboard'
 
 export function AppShell() {
   const { profile } = useProfile()
   const { pathname } = useLocation()
   const isGameRoute = pathname.startsWith('/play/')
+  const [cloudState, setCloudState] = useState<'checking' | 'ready' | 'error'>('checking')
+
+  function connectCloud() {
+    setCloudState('checking')
+    void prepareCloudLeaderboard()
+      .then(() => setCloudState('ready'))
+      .catch(() => setCloudState('error'))
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    void prepareCloudLeaderboard()
+      .then(() => { if (!cancelled) setCloudState('ready') })
+      .catch(() => { if (!cancelled) setCloudState('error') })
+    return () => { cancelled = true }
+  }, [])
 
   return (
     <div className={`app-shell ${isGameRoute ? 'game-shell' : ''}`}>
@@ -21,9 +38,15 @@ export function AppShell() {
             <NavLink to="/leaderboard"><Trophy size={15} /> 순위</NavLink>
           </nav>
           <div className="header-player">
-            <span className={`cloud-state ${isCloudConnected ? 'online' : ''}`} title={isCloudConnected ? 'Supabase 연결됨' : '로컬 기록 모드'}>
-              <Cloud size={13} /> {isCloudConnected ? 'LIVE' : 'LOCAL'}
-            </span>
+            <button
+              type="button"
+              className={`cloud-state ${cloudState === 'ready' ? 'online' : cloudState}`}
+              title={cloudState === 'ready' ? 'Supabase 연결됨' : cloudState === 'checking' ? 'Supabase 연결 중' : 'Supabase 재연결'}
+              onClick={cloudState === 'error' ? connectCloud : undefined}
+              disabled={cloudState !== 'error'}
+            >
+              <Cloud size={13} /> {cloudState === 'ready' ? 'LIVE' : cloudState === 'checking' ? 'CONNECT' : 'RETRY'}
+            </button>
             <span className="player-avatar">{profile?.name.slice(0, 1) ?? '?'}</span>
             <span>{profile?.name ?? 'PLAYER'}</span>
           </div>

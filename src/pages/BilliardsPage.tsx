@@ -21,6 +21,7 @@ import { PHYSICS, type BilliardsMode, type ShotVerdict, type Vec2 } from '../gam
 import { BILLIARDS_STARTING_LIVES, settleBilliardsShot } from '../game/billiards/run'
 import { prepareCloudLeaderboard, startScoreRun, submitScore } from '../lib/leaderboard'
 import { nowMs } from '../lib/time'
+import type { ScoreSubmission } from '../types'
 
 const gameTitle: Record<BilliardsMode, string> = {
   'three-cushion': '3쿠션',
@@ -54,7 +55,8 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
   const sceneRef = useRef<BilliardsSceneHandle>(null)
   const startedAt = useRef(0)
   const finishTimer = useRef<number | null>(null)
-  const scoreRun = useRef<Promise<string | null> | null>(null)
+  const scoreRun = useRef<Promise<string> | null>(null)
+  const pendingScore = useRef<ScoreSubmission | null>(null)
   const launchPending = useRef(false)
   const runGeneration = useRef(0)
   const angleRef = useRef(10)
@@ -86,23 +88,30 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
   useEffect(() => {
     let cancelled = false
     void prepareCloudLeaderboard()
-      .then((ready) => { if (!cancelled) setRankedState(ready ? 'ready' : 'local') })
-      .catch(() => { if (!cancelled) setRankedState('local') })
+      .then(() => { if (!cancelled) setRankedState('ready') })
+      .catch(() => { if (!cancelled) setRankedState('error') })
     return () => { cancelled = true }
   }, [profile])
+
+  function reconnectRanked() {
+    setRankedState('checking')
+    void prepareCloudLeaderboard()
+      .then(() => setRankedState('ready'))
+      .catch(() => setRankedState('error'))
+  }
 
   function beginScoreRun() {
     if (scoreRun.current) return scoreRun.current
     setRankedState('checking')
-    const attempt = () => startScoreRun(mode)
-    const run = attempt()
-      .catch(() => new Promise<string | null>((resolve) => {
-        window.setTimeout(() => { void attempt().then(resolve).catch(() => resolve(null)) }, 600)
-      }))
+    const run = startScoreRun(mode)
       .then((runId) => {
-        setRankedState(runId ? 'ready' : 'local')
-        if (!runId) scoreRun.current = null
+        setRankedState('ready')
         return runId
+      })
+      .catch((error: unknown) => {
+        scoreRun.current = null
+        setRankedState('error')
+        throw error
       })
     scoreRun.current = run
     return run
@@ -142,7 +151,7 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
     const shotPower = powerFromCuePull(pull)
     try {
       if (startedAt.current === 0) {
-        if (profile) await beginScoreRun()
+        await beginScoreRun()
         if (generation !== runGeneration.current) return
         startedAt.current = nowMs()
       }
@@ -151,6 +160,8 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
         setPower(shotPower)
         setCuePull(0)
       }
+    } catch {
+      updateCuePull(0)
     } finally {
       launchPending.current = false
     }
@@ -248,22 +259,32 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
 
   function finishRun(finalScore: number) {
     setFinished(true)
-    if (!profile) return
+    pendingScore.current = { game: mode, score: finalScore, durationMs: nowMs() - startedAt.current }
+    saveFinalScore()
+  }
+
+  function saveFinalScore() {
+    const submission = pendingScore.current
+    const cloudRun = scoreRun.current
+    if (!profile || !submission || !cloudRun) {
+      setSaved('error')
+      return
+    }
     setSaved('saving')
-    const cloudRun = scoreRun.current ?? Promise.resolve(null)
-    void cloudRun.then((runId) => submitScore(profile, { game: mode, score: finalScore, durationMs: nowMs() - startedAt.current }, runId))
+    void cloudRun.then((runId) => submitScore(profile, submission, runId))
       .then(() => setSaved('saved'))
       .catch(() => setSaved('error'))
   }
 
   function restart() {
-    if (saved === 'saving') return
+    if (saved === 'saving' || saved === 'error') return
     if (finishTimer.current !== null) window.clearTimeout(finishTimer.current)
     finishTimer.current = null
     runGeneration.current += 1
     launchPending.current = false
     startedAt.current = 0
     scoreRun.current = null
+    pendingScore.current = null
     setSceneKey((key) => key + 1)
     setView('overview')
     updateAimAngle(10)
@@ -280,7 +301,7 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
 
   return (
     <div className="play-page billiards-page">
-      <GameHeader title={gameTitle[mode]} rankedState={rankedState}>
+      <GameHeader title={gameTitle[mode]} rankedState={rankedState} onRetry={reconnectRanked}>
         <div className="shot-score" aria-label={`현재 점수 ${score}점, 남은 목숨 ${lives}개`}>
           <span><small>점수</small><strong>{score}</strong></span>
           <div className="life-dots" aria-hidden="true">
@@ -390,7 +411,7 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
               onPointerUp={(event) => endCuePull(event)}
               onPointerCancel={(event) => endCuePull(event, true)}
               onKeyDown={keyCuePull}
-              disabled={view !== 'aim' || shooting || lives <= 0 || rankedState === 'checking'}
+              disabled={view !== 'aim' || shooting || lives <= 0 || rankedState !== 'ready'}
               role="slider"
               aria-orientation="vertical"
               aria-valuemin={0}
@@ -415,6 +436,7 @@ export function BilliardsPage({ mode }: { mode: BilliardsMode }) {
           score={score}
           message="5개의 목숨을 모두 사용했습니다."
           saved={saved}
+          onRetrySave={saveFinalScore}
           onRestart={restart}
         />
       )}

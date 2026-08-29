@@ -1,24 +1,21 @@
 import { createClient } from '@supabase/supabase-js'
 import type { GameCode, LeaderboardEntry, PlayerProfile, ScoreSubmission } from '../types'
 
-const LOCAL_KEY = 'hajun-arcade:scores:v1'
+const LEGACY_LOCAL_SCORE_KEY = 'hajun-arcade:scores:v1'
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
-
-export const isCloudConnected = Boolean(supabaseUrl && supabaseKey)
-const supabase = isCloudConnected ? createClient(supabaseUrl!, supabaseKey!) : null
+const projectRef = supabaseUrl ? new URL(supabaseUrl).hostname.split('.')[0] : null
+const authStorageKey = projectRef ? `sb-${projectRef}-auth-token` : null
+const supabase = supabaseUrl && supabaseKey
+  ? createClient(supabaseUrl, supabaseKey, authStorageKey ? { auth: { storageKey: authStorageKey } } : undefined)
+  : null
 let cloudIdentityPromise: Promise<boolean> | null = null
 
-function readLocal(): LeaderboardEntry[] {
-  try {
-    return JSON.parse(localStorage.getItem(LOCAL_KEY) ?? '[]') as LeaderboardEntry[]
-  } catch {
-    return []
-  }
-}
+if (typeof localStorage !== 'undefined') localStorage.removeItem(LEGACY_LOCAL_SCORE_KEY)
 
-function writeLocal(entries: LeaderboardEntry[]) {
-  localStorage.setItem(LOCAL_KEY, JSON.stringify(entries))
+function requireCloudClient() {
+  if (!supabase) throw new Error('Supabase leaderboard is not configured')
+  return supabase
 }
 
 function mapRow(row: Record<string, unknown>): LeaderboardEntry {
@@ -33,30 +30,39 @@ function mapRow(row: Record<string, unknown>): LeaderboardEntry {
   }
 }
 
-export async function getLeaderboard(game: GameCode, limit = 20): Promise<LeaderboardEntry[]> {
-  if (supabase) {
-    const { data, error } = await supabase.rpc('get_arcade_leaderboard', {
-      p_game: game,
-      p_limit: limit,
-    })
-    if (!error && data) return data.map((row: Record<string, unknown>) => mapRow(row))
-  }
+function replaceableSessionError(error: unknown) {
+  if (!error || typeof error !== 'object') return false
+  const candidate = error as { name?: string; status?: number }
+  return candidate.name === 'AuthSessionMissingError'
+    || candidate.status === 400
+    || candidate.status === 401
+    || candidate.status === 403
+    || candidate.status === 422
+}
 
-  return readLocal()
-    .filter((entry) => entry.game === game)
-    .sort((a, b) => b.score - a.score || a.durationMs - b.durationMs)
-    .slice(0, limit)
+function clearStoredIdentity() {
+  if (authStorageKey && typeof localStorage !== 'undefined') localStorage.removeItem(authStorageKey)
 }
 
 export async function prepareCloudLeaderboard(): Promise<boolean> {
-  if (!supabase) return false
+  const client = requireCloudClient()
   if (cloudIdentityPromise) return cloudIdentityPromise
   cloudIdentityPromise = (async () => {
-    const { data: sessionData } = await supabase.auth.getSession()
-    if (sessionData.session?.user) return true
-    const { data, error } = await supabase.auth.signInAnonymously()
+    // getUser validates the persisted JWT with Auth. getSession alone trusts
+    // browser storage and can mistake a stale or corrupted token for a user.
+    const { data: userData, error: userError } = await client.auth.getUser()
+    if (!userError && userData.user) return true
+    if (userError && !replaceableSessionError(userError)) throw userError
+
+    if ((userError as { name?: string } | null)?.name !== 'AuthSessionMissingError') {
+      await client.auth.signOut({ scope: 'local' }).catch(() => undefined)
+    }
+    clearStoredIdentity()
+
+    const { data, error } = await client.auth.signInAnonymously()
     if (error) throw error
-    return Boolean(data.user)
+    if (!data.user) throw new Error('Supabase anonymous sign-in returned no user')
+    return true
   })().catch((error: unknown) => {
     cloudIdentityPromise = null
     throw error
@@ -64,45 +70,46 @@ export async function prepareCloudLeaderboard(): Promise<boolean> {
   return cloudIdentityPromise
 }
 
-export async function startScoreRun(game: GameCode): Promise<string | null> {
-  if (!supabase) return null
-  if (!await prepareCloudLeaderboard()) return null
-  const { data, error } = await supabase.rpc('start_arcade_run', {
+export async function getLeaderboard(game: GameCode, limit = 20): Promise<LeaderboardEntry[]> {
+  const client = requireCloudClient()
+  await prepareCloudLeaderboard()
+  const { data, error, status } = await client.rpc('get_arcade_leaderboard', {
+    p_game: game,
+    p_limit: limit,
+  })
+  if (error) {
+    if (status === 401 || status === 403) cloudIdentityPromise = null
+    throw error
+  }
+  return (data ?? []).map((row: Record<string, unknown>) => mapRow(row))
+}
+
+export async function startScoreRun(game: GameCode): Promise<string> {
+  const client = requireCloudClient()
+  await prepareCloudLeaderboard()
+  const { data, error, status } = await client.rpc('start_arcade_run', {
     p_game: game,
   })
   if (error) {
-    cloudIdentityPromise = null
+    if (status === 401 || status === 403) cloudIdentityPromise = null
     throw error
   }
-  return typeof data === 'string' ? data : null
+  if (typeof data !== 'string') throw new Error('Supabase did not return a score run id')
+  return data
 }
 
-export async function submitScore(profile: PlayerProfile, run: ScoreSubmission, runId: string | null = null) {
-  const now = new Date().toISOString()
-  const entries = readLocal()
-  const existing = entries.find((entry) => entry.playerId === profile.id && entry.game === run.game)
-  const isBetter = !existing || run.score > existing.score || (run.score === existing.score && run.durationMs < existing.durationMs)
-  const next: LeaderboardEntry = {
-    playerId: profile.id,
-    name: profile.name,
-    game: run.game,
-    score: isBetter ? run.score : existing.score,
-    durationMs: isBetter ? run.durationMs : existing.durationMs,
-    playedCount: (existing?.playedCount ?? 0) + 1,
-    updatedAt: now,
+export async function submitScore(profile: PlayerProfile, run: ScoreSubmission, runId: string) {
+  const client = requireCloudClient()
+  await prepareCloudLeaderboard()
+  const { error, status } = await client.rpc('submit_arcade_score', {
+    p_display_name: profile.name,
+    p_game: run.game,
+    p_score: run.score,
+    p_duration_ms: Math.max(0, Math.round(run.durationMs)),
+    p_run_id: runId,
+  })
+  if (error) {
+    if (status === 401 || status === 403) cloudIdentityPromise = null
+    throw error
   }
-  writeLocal([...entries.filter((entry) => !(entry.playerId === profile.id && entry.game === run.game)), next])
-
-  if (supabase) {
-    if (!runId) throw new Error('cloud score run was not started')
-    const { error } = await supabase.rpc('submit_arcade_score', {
-      p_display_name: profile.name,
-      p_game: run.game,
-      p_score: run.score,
-      p_duration_ms: Math.max(0, Math.round(run.durationMs)),
-      p_run_id: runId,
-    })
-    if (error) throw error
-  }
-  return next
 }

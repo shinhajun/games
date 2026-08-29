@@ -16,12 +16,14 @@ import {
 } from '../game/yacht/scoring'
 import { prepareCloudLeaderboard, startScoreRun, submitScore } from '../lib/leaderboard'
 import { nowMs } from '../lib/time'
+import type { ScoreSubmission } from '../types'
 
 const freshDice = () => [1, 2, 3, 4, 5]
 export function YachtPage() {
   const { profile } = useProfile()
   const startedAt = useRef(0)
-  const scoreRun = useRef<Promise<string | null> | null>(null)
+  const scoreRun = useRef<Promise<string> | null>(null)
+  const pendingScore = useRef<ScoreSubmission | null>(null)
   const rollPending = useRef(false)
   const runGeneration = useRef(0)
   const rollTimer = useRef<number | null>(null)
@@ -46,23 +48,30 @@ export function YachtPage() {
   useEffect(() => {
     let cancelled = false
     void prepareCloudLeaderboard()
-      .then((ready) => { if (!cancelled) setRankedState(ready ? 'ready' : 'local') })
-      .catch(() => { if (!cancelled) setRankedState('local') })
+      .then(() => { if (!cancelled) setRankedState('ready') })
+      .catch(() => { if (!cancelled) setRankedState('error') })
     return () => { cancelled = true }
   }, [profile])
+
+  function reconnectRanked() {
+    setRankedState('checking')
+    void prepareCloudLeaderboard()
+      .then(() => setRankedState('ready'))
+      .catch(() => setRankedState('error'))
+  }
 
   function beginScoreRun() {
     if (scoreRun.current) return scoreRun.current
     setRankedState('checking')
-    const attempt = () => startScoreRun('yacht')
-    const run = attempt()
-      .catch(() => new Promise<string | null>((resolve) => {
-        window.setTimeout(() => { void attempt().then(resolve).catch(() => resolve(null)) }, 600)
-      }))
+    const run = startScoreRun('yacht')
       .then((runId) => {
-        setRankedState(runId ? 'ready' : 'local')
-        if (!runId) scoreRun.current = null
+        setRankedState('ready')
         return runId
+      })
+      .catch((error: unknown) => {
+        scoreRun.current = null
+        setRankedState('error')
+        throw error
       })
     scoreRun.current = run
     return run
@@ -79,7 +88,9 @@ export function YachtPage() {
     if (startedAt.current === 0) {
       rollPending.current = true
       try {
-        if (profile) await beginScoreRun()
+        await beginScoreRun()
+      } catch {
+        return
       } finally {
         rollPending.current = false
       }
@@ -107,24 +118,33 @@ export function YachtPage() {
     if (Object.keys(nextScores).length === YACHT_CATEGORIES.length) {
       const finalScore = totalYachtScore(nextScores)
       setFinished(true)
-      if (profile) {
-        setSaved('saving')
-        const cloudRun = scoreRun.current ?? Promise.resolve(null)
-        void cloudRun.then((runId) => submitScore(profile, { game: 'yacht', score: finalScore, durationMs: nowMs() - startedAt.current }, runId))
-          .then(() => setSaved('saved'))
-          .catch(() => setSaved('error'))
-      }
+      pendingScore.current = { game: 'yacht', score: finalScore, durationMs: nowMs() - startedAt.current }
+      saveFinalScore()
     }
   }
 
+  function saveFinalScore() {
+    const submission = pendingScore.current
+    const cloudRun = scoreRun.current
+    if (!profile || !submission || !cloudRun) {
+      setSaved('error')
+      return
+    }
+    setSaved('saving')
+    void cloudRun.then((runId) => submitScore(profile, submission, runId))
+      .then(() => setSaved('saved'))
+      .catch(() => setSaved('error'))
+  }
+
   function restart() {
-    if (saved === 'saving') return
+    if (saved === 'saving' || saved === 'error') return
     if (rollTimer.current !== null) window.clearTimeout(rollTimer.current)
     rollTimer.current = null
     runGeneration.current += 1
     rollPending.current = false
     startedAt.current = 0
     scoreRun.current = null
+    pendingScore.current = null
     setDice(freshDice())
     setHeld([false, false, false, false, false])
     setRolls(0)
@@ -135,7 +155,7 @@ export function YachtPage() {
 
   return (
     <div className="play-page yacht-page">
-      <GameHeader title="Yacht Dice" rankedState={rankedState}>
+      <GameHeader title="Yacht Dice" rankedState={rankedState} onRetry={reconnectRanked}>
         <div className="yacht-total"><small>총점</small><strong>{total}<em>/{YACHT_MAX_SCORE}</em></strong></div>
       </GameHeader>
 
@@ -155,8 +175,8 @@ export function YachtPage() {
                 </button>
               ))}
             </div>
-            <button className="roll-button" onClick={() => { void roll() }} disabled={rolling || rolls >= 3 || (rolls === 0 && rankedState === 'checking')}>
-              {rolls === 0 && rankedState === 'checking' ? <><span className="button-loader" /> 순위 연결 중</> : rolling ? <><span className="button-loader" /> 굴리는 중</> : rolls === 0 ? <><Dice5 /> 주사위 굴리기</> : rolls < 3 ? <><Dice5 /> 다시 굴리기 <small>{3 - rolls}회 남음</small></> : <><Hand /> 점수를 선택하세요</>}
+            <button className="roll-button" onClick={() => { void roll() }} disabled={rolling || rolls >= 3 || (rolls === 0 && rankedState !== 'ready')}>
+              {rolls === 0 && rankedState === 'checking' ? <><span className="button-loader" /> 순위 연결 중</> : rolls === 0 && rankedState === 'error' ? <>서버 재연결 필요</> : rolling ? <><span className="button-loader" /> 굴리는 중</> : rolls === 0 ? <><Dice5 /> 주사위 굴리기</> : rolls < 3 ? <><Dice5 /> 다시 굴리기 <small>{3 - rolls}회 남음</small></> : <><Hand /> 점수를 선택하세요</>}
             </button>
           </div>
         </div>
@@ -206,6 +226,7 @@ export function YachtPage() {
           maxScore={YACHT_MAX_SCORE}
           message="15개 족보와 상단 보너스를 모두 계산했습니다."
           saved={saved}
+          onRetrySave={saveFinalScore}
           onRestart={restart}
           accent="amber"
         />

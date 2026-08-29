@@ -7,7 +7,7 @@ const saveStateLabel: Record<SaveState, string> = {
   idle: '',
   saving: '기록 저장 중…',
   saved: '최고 기록에 반영했습니다.',
-  error: '서버 연결이 없어 로컬에 저장했습니다.',
+  error: '서버 저장 실패. 기록을 유지하고 있습니다.',
 }
 
 export function GameResultDialog({
@@ -16,6 +16,7 @@ export function GameResultDialog({
   maxScore,
   message,
   saved,
+  onRetrySave,
   onRestart,
   accent = 'green',
 }: {
@@ -24,6 +25,7 @@ export function GameResultDialog({
   maxScore?: number
   message: string
   saved: SaveState
+  onRetrySave?: () => void
   onRestart: () => void
   accent?: 'green' | 'amber'
 }) {
@@ -36,7 +38,8 @@ export function GameResultDialog({
         <p>{message}</p>
         <p className={`result-save-state ${saved}`} role="status">{saveStateLabel[saved]}</p>
         <div className="result-actions">
-          <button className="primary-button" onClick={onRestart} disabled={saved === 'saving'}><RotateCcw /> 다시 하기</button>
+          {saved === 'error' && onRetrySave && <button className="primary-button" onClick={onRetrySave}>저장 재시도</button>}
+          <button className={saved === 'error' ? 'text-button' : 'primary-button'} onClick={onRestart} disabled={saved === 'saving' || saved === 'error'}><RotateCcw /> 다시 하기</button>
           <Link className="text-button" to="/leaderboard">전체 순위</Link>
         </div>
       </div>

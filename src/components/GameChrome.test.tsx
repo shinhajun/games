@@ -19,6 +19,18 @@ describe('shared game chrome', () => {
     expect(html).not.toContain('RANKED')
   })
 
+  it('offers server reconnection instead of pretending failed ranked play is local', () => {
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <GameHeader title="4구" rankedState="error" onRetry={() => undefined}><div>5 lives</div></GameHeader>
+      </MemoryRouter>,
+    )
+
+    expect(html).toContain('순위 서버 재연결')
+    expect(html).toContain('>재연결</button>')
+    expect(html).not.toContain('로컬')
+  })
+
   it('uses one concise result summary without embedding another leaderboard', () => {
     const html = renderToStaticMarkup(
       <MemoryRouter>
@@ -41,5 +53,24 @@ describe('shared game chrome', () => {
     expect(html).toContain('전체 순위')
     expect(html).not.toContain('leaderboard-card')
     expect(html).not.toContain('FINAL SCORE')
+  })
+
+  it('keeps a failed score pending for server retry and never claims a local save', () => {
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <GameResultDialog
+          titleId="result-title"
+          score={12}
+          message="게임 종료"
+          saved="error"
+          onRetrySave={() => undefined}
+          onRestart={() => undefined}
+        />
+      </MemoryRouter>,
+    )
+
+    expect(html).toContain('서버 저장 실패')
+    expect(html).toContain('저장 재시도')
+    expect(html).not.toContain('로컬')
   })
 })
