@@ -17,4 +17,13 @@ describe('Yacht difficult-combination celebration', () => {
     expect(getYachtCelebration([1, 1, 2, 4, 6])).toBeNull()
     expect(getYachtCelebration([1, 2, 3])).toBeNull()
   })
+
+  it('does not celebrate a difficult category that is already recorded', () => {
+    expect(getYachtCelebration([2, 3, 4, 5, 6], { largeStraight: 20 })).toBeNull()
+    expect(getYachtCelebration([3, 3, 3, 5, 5], { fullHouse: 0 })).toBeNull()
+  })
+
+  it('still celebrates when only an unrelated category is recorded', () => {
+    expect(getYachtCelebration([4, 4, 4, 4, 2], { yacht: 0 })?.kind).toBe('fourKind')
+  })
 })

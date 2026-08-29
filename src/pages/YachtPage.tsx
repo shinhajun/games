@@ -108,7 +108,7 @@ export function YachtPage() {
   }
 
   function completePhysicalRoll(nextDice: number[]) {
-    const difficultCombination = getYachtCelebration(nextDice)
+    const difficultCombination = getYachtCelebration(nextDice, scores)
     setCelebration(difficultCombination
       ? { ...difficultCombination, id: ++celebrationSequence.current }
       : null)
@@ -246,7 +246,7 @@ export function YachtPage() {
                     </div>
                   )}
                   <button
-                    className={`${locked !== undefined ? 'locked' : ''} ${candidate === category.max ? 'max-candidate' : ''} ${selectedCategory === category.id ? 'selected' : ''}`}
+                    className={`${locked !== undefined ? 'locked' : ''} ${selectedCategory === category.id ? 'selected' : ''}`.trim()}
                     onClick={() => selectCategory(category.id)}
                     disabled={locked !== undefined || rolls === 0 || rolling}
                     aria-pressed={selectedCategory === category.id}

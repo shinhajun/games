@@ -1,4 +1,4 @@
-import { scoreYachtCategory } from './scoring'
+import { scoreYachtCategory, type YachtCategory } from './scoring'
 
 export type YachtCelebrationTier = 'rare' | 'epic' | 'legendary'
 
@@ -21,6 +21,11 @@ const celebrations: YachtCelebration[] = [
   { kind: 'smallStraight', label: 'SMALL STRAIGHT!', detail: '1부터 5까지 스트레이트 완성', tier: 'rare' },
 ]
 
-export function getYachtCelebration(dice: number[]): YachtCelebration | null {
-  return celebrations.find((celebration) => scoreYachtCategory(celebration.kind, dice) > 0) ?? null
+export function getYachtCelebration(
+  dice: number[],
+  recordedScores: Partial<Record<YachtCategory, number>> = {},
+): YachtCelebration | null {
+  const celebration = celebrations.find((candidate) => scoreYachtCategory(candidate.kind, dice) > 0) ?? null
+  if (!celebration || recordedScores[celebration.kind] !== undefined) return null
+  return celebration
 }
