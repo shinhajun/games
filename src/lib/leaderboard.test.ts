@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+interface MockClientOptions {
+  global?: { fetch?: typeof globalThis.fetch }
+}
+
 function createStorage() {
   const values = new Map<string, string>()
   return {
@@ -16,11 +20,13 @@ async function loadLeaderboard(client: object) {
   vi.resetModules()
   vi.stubEnv('VITE_SUPABASE_URL', 'https://project-ref.supabase.co')
   vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'anon-key')
-  vi.doMock('@supabase/supabase-js', () => ({ createClient: vi.fn(() => client) }))
-  return import('./leaderboard')
+  const createClient = vi.fn((_url: string, _key: string, _options?: MockClientOptions) => client)
+  vi.doMock('@supabase/supabase-js', () => ({ createClient }))
+  return { ...await import('./leaderboard'), createClient }
 }
 
 afterEach(() => {
+  vi.useRealTimers()
   vi.doUnmock('@supabase/supabase-js')
   vi.unstubAllEnvs()
   vi.unstubAllGlobals()
@@ -28,6 +34,24 @@ afterEach(() => {
 })
 
 describe('Supabase leaderboard connection', () => {
+  it('aborts a cloud request instead of letting it hang for ten seconds', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('localStorage', createStorage())
+    const fetch = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true })
+    }))
+    vi.stubGlobal('fetch', fetch)
+    const { createClient } = await loadLeaderboard({})
+    const deadlineFetch = createClient.mock.calls[0]?.[2]?.global?.fetch
+    if (!deadlineFetch) throw new Error('Supabase deadline fetch was not configured')
+
+    const request = deadlineFetch('https://project-ref.supabase.co/rest/v1/rpc/submit_arcade_score')
+    const assertion = expect(request).rejects.toMatchObject({ name: 'TimeoutError' })
+    await vi.advanceTimersByTimeAsync(2_001)
+    await assertion
+    expect(fetch).toHaveBeenCalledOnce()
+  })
+
   it('replaces a stale stored session with a new anonymous identity', async () => {
     const storage = createStorage()
     vi.stubGlobal('localStorage', storage)
@@ -86,11 +110,10 @@ describe('Supabase leaderboard connection', () => {
     })
   })
 
-  it('retries the same token, then rotates it when submission keeps failing', async () => {
+  it('rotates immediately when the server rejects an invalid or consumed run', async () => {
     vi.stubGlobal('localStorage', createStorage())
     const consumedError = { name: 'PostgrestError', status: 400, message: 'invalid or consumed run' }
     const rpc = vi.fn()
-      .mockResolvedValueOnce({ data: null, error: consumedError, status: 400 })
       .mockResolvedValueOnce({ data: null, error: consumedError, status: 400 })
       .mockResolvedValueOnce({ data: 'fresh-run', error: null, status: 200 })
       .mockResolvedValueOnce({ data: null, error: null, status: 204 })
@@ -106,8 +129,68 @@ describe('Supabase leaderboard connection', () => {
     await expect(saveScore(profile, submission, Promise.resolve('old-run'))).resolves.toBe('fresh-run')
     expect(rpc.mock.calls.map(([name]) => name)).toEqual([
       'submit_arcade_score',
-      'submit_arcade_score',
       'start_arcade_run',
+      'submit_arcade_score',
+    ])
+  })
+
+  it('retries an ambiguous server failure once without starting another run', async () => {
+    vi.stubGlobal('localStorage', createStorage())
+    const serverError = { name: 'PostgrestError', status: 503, message: 'temporarily unavailable' }
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: null, error: serverError, status: 503 })
+      .mockResolvedValueOnce({ data: null, error: null, status: 204 })
+    const { saveScore } = await loadLeaderboard({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'valid-user' } }, error: null }),
+      },
+      rpc,
+    })
+    const profile = { id: 'browser-profile', name: '재시도검증' }
+    const submission = { game: 'yacht' as const, score: 140, durationMs: 30_000 }
+
+    await expect(saveScore(profile, submission, Promise.resolve('active-run'))).resolves.toBe('active-run')
+    expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+      'submit_arcade_score',
+      'submit_arcade_score',
+    ])
+  })
+
+  it('does not rotate a run for a deterministic validation failure', async () => {
+    vi.stubGlobal('localStorage', createStorage())
+    const validationError = { name: 'PostgrestError', status: 400, message: 'invalid score' }
+    const rpc = vi.fn().mockResolvedValueOnce({ data: null, error: validationError, status: 400 })
+    const { saveScore } = await loadLeaderboard({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'valid-user' } }, error: null }),
+      },
+      rpc,
+    })
+    const profile = { id: 'browser-profile', name: '검증실패' }
+    const submission = { game: 'yacht' as const, score: 999, durationMs: 30_000 }
+
+    await expect(saveScore(profile, submission, Promise.resolve('active-run'))).rejects.toThrow('invalid score')
+    expect(rpc.mock.calls.map(([name]) => name)).toEqual(['submit_arcade_score'])
+  })
+
+  it('stops after two ambiguous failures instead of adding a replacement-run waterfall', async () => {
+    vi.stubGlobal('localStorage', createStorage())
+    const networkError = { name: 'FetchError', status: 0, message: 'network timeout' }
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: null, error: networkError, status: 0 })
+      .mockResolvedValueOnce({ data: null, error: networkError, status: 0 })
+    const { saveScore } = await loadLeaderboard({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'valid-user' } }, error: null }),
+      },
+      rpc,
+    })
+    const profile = { id: 'browser-profile', name: '지연검증' }
+    const submission = { game: 'three-cushion' as const, score: 2, durationMs: 20_000 }
+
+    await expect(saveScore(profile, submission, Promise.resolve('active-run'))).rejects.toThrow('network timeout')
+    expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+      'submit_arcade_score',
       'submit_arcade_score',
     ])
   })
