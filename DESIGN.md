@@ -88,6 +88,7 @@ Hajun Arcade is a compact, premium game room: dark green felt, warm brass, preci
 - Cue elevation includes a compact physical side preview: the rendered cue rises around the ball as the 0–45° value changes. Its native range input must be explicitly constrained to the rail width on mobile.
 - Every new or restarted billiards run begins with a level 0° cue; elevated shots are always an explicit player choice.
 - The strike point is a 3D reticle clamped to the physical cue-ball surface; dragging it moves the rendered cue tip and the impact vector together.
+- Every carom ball carries six contrasting, ball-local spin reference spots. White/yellow balls use red spots and red balls use ivory spots; the spots rotate with the simulated ball mesh rather than facing the camera.
 - The launch guide follows the predicted initial ball vector, including the small immediate squirt from side tip offset.
 - Table annotations avoid the rail safe zone.
 - The rail is the sole view-mode indicator and control. Technical table dimensions and a second view badge do not overlay the playfield.

@@ -2,6 +2,7 @@ import { ContactShadows, RoundedBox } from '@react-three/drei'
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { forwardRef, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { DoubleSide, Group, Matrix4, Mesh, PerspectiveCamera, Quaternion, Vector3 } from 'three'
+import { BALL_SPOT_DIRECTIONS, ballSpotColor } from './ballAppearance'
 import {
   applyShot,
   areBallsStopped,
@@ -237,15 +238,21 @@ function Table({ spec }: { spec: TableSpec }) {
 }
 
 function Ball({ id, color, radius, meshRef }: { id: BallState['id']; color: string; radius: number; meshRef: (mesh: Mesh | null) => void }) {
+  const spotColor = ballSpotColor(id)
   return (
     <mesh ref={meshRef} castShadow>
       <sphereGeometry args={[radius, 48, 32]} />
       <meshPhysicalMaterial color={color} roughness={0.19} clearcoat={1} clearcoatRoughness={0.13} />
-      {id === 'cue' && (
-        <mesh position={[0, radius * 0.99, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <circleGeometry args={[radius * 0.14, 16]} /><meshBasicMaterial color="#c94b3f" />
+      {BALL_SPOT_DIRECTIONS.map((spot) => (
+        <mesh
+          key={`${spot.axis}-${spot.sign}`}
+          position={spot.position.map((value) => value * radius * 1.004) as [number, number, number]}
+          rotation={spot.rotation}
+        >
+          <circleGeometry args={[radius * 0.14, 24]} />
+          <meshPhysicalMaterial color={spotColor} roughness={0.2} clearcoat={1} clearcoatRoughness={0.12} />
         </mesh>
-      )}
+      ))}
     </mesh>
   )
 }
