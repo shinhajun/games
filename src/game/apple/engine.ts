@@ -1,5 +1,7 @@
 export const APPLE_COLUMNS = 17
 export const APPLE_ROWS = 10
+export const APPLE_PORTRAIT_COLUMNS = 10
+export const APPLE_PORTRAIT_ROWS = 17
 export const APPLE_COUNT = APPLE_COLUMNS * APPLE_ROWS
 export const APPLE_TARGET = 10
 export const APPLE_ROUND_MS = 120_000
@@ -48,23 +50,23 @@ export function normalizeAppleSelection(selection: AppleSelection): NormalizedAp
   }
 }
 
-export function appleIndicesInSelection(selection: AppleSelection) {
+export function appleIndicesInSelection(selection: AppleSelection, columns = APPLE_COLUMNS) {
   const bounds = normalizeAppleSelection(selection)
   const indices: number[] = []
   for (let row = bounds.top; row <= bounds.bottom; row += 1) {
     for (let column = bounds.left; column <= bounds.right; column += 1) {
-      indices.push(row * APPLE_COLUMNS + column)
+      indices.push(row * columns + column)
     }
   }
   return indices
 }
 
-export function appleSelectionTotal(board: AppleBoard, selection: AppleSelection) {
-  return appleIndicesInSelection(selection).reduce((total, index) => total + (board[index] ?? 0), 0)
+export function appleSelectionTotal(board: AppleBoard, selection: AppleSelection, columns = APPLE_COLUMNS) {
+  return appleIndicesInSelection(selection, columns).reduce((total, index) => total + (board[index] ?? 0), 0)
 }
 
-export function clearAppleSelection(board: AppleBoard, selection: AppleSelection): AppleClearResult {
-  const indices = appleIndicesInSelection(selection)
+export function clearAppleSelection(board: AppleBoard, selection: AppleSelection, columns = APPLE_COLUMNS): AppleClearResult {
+  const indices = appleIndicesInSelection(selection, columns)
   const total = indices.reduce((sum, index) => sum + (board[index] ?? 0), 0)
   const clearedIndices = total === APPLE_TARGET ? indices.filter((index) => board[index] !== null) : []
   if (clearedIndices.length === 0) {
@@ -82,11 +84,18 @@ export function clearAppleSelection(board: AppleBoard, selection: AppleSelection
   }
 }
 
-export function appleCellFromPoint(x: number, y: number, width: number, height: number): AppleCellPosition {
+export function appleCellFromPoint(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  columns = APPLE_COLUMNS,
+  rows = APPLE_ROWS,
+): AppleCellPosition {
   const safeWidth = Math.max(width, 1)
   const safeHeight = Math.max(height, 1)
   return {
-    row: clamp(Math.floor(y / safeHeight * APPLE_ROWS), 0, APPLE_ROWS - 1),
-    column: clamp(Math.floor(x / safeWidth * APPLE_COLUMNS), 0, APPLE_COLUMNS - 1),
+    row: clamp(Math.floor(y / safeHeight * rows), 0, rows - 1),
+    column: clamp(Math.floor(x / safeWidth * columns), 0, columns - 1),
   }
 }

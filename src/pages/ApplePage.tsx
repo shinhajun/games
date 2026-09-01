@@ -5,7 +5,10 @@ import { GameResultDialog } from '../components/GameResultDialog'
 import {
   APPLE_COLUMNS,
   APPLE_COUNT,
+  APPLE_PORTRAIT_COLUMNS,
+  APPLE_PORTRAIT_ROWS,
   APPLE_ROUND_MS,
+  APPLE_ROWS,
   APPLE_TARGET,
   appleCellFromPoint,
   appleIndicesInSelection,
@@ -32,8 +35,25 @@ function formatTime(milliseconds: number) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
 }
 
+function usePortraitAppleGrid() {
+  const query = '(max-width: 860px) and (orientation: portrait)'
+  const [portrait, setPortrait] = useState(() => window.matchMedia(query).matches)
+
+  useEffect(() => {
+    const media = window.matchMedia(query)
+    const update = () => setPortrait(media.matches)
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [])
+
+  return portrait
+}
+
 export function ApplePage() {
   const { profile } = useProfile()
+  const portraitGrid = usePortraitAppleGrid()
+  const gridColumns = portraitGrid ? APPLE_PORTRAIT_COLUMNS : APPLE_COLUMNS
+  const gridRows = portraitGrid ? APPLE_PORTRAIT_ROWS : APPLE_ROWS
   const boardElement = useRef<HTMLDivElement>(null)
   const drag = useRef<DragState | null>(null)
   const timer = useRef<number | null>(null)
@@ -53,8 +73,8 @@ export function ApplePage() {
   const [timeLeft, setTimeLeft] = useState(APPLE_ROUND_MS)
   const [perfectClear, setPerfectClear] = useState(false)
   const [saved, setSaved] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
-  const selectedIndices = useMemo(() => selection ? new Set(appleIndicesInSelection(selection)) : new Set<number>(), [selection])
-  const selectedTotal = selection ? appleSelectionTotal(board, selection) : 0
+  const selectedIndices = useMemo(() => selection ? new Set(appleIndicesInSelection(selection, gridColumns)) : new Set<number>(), [gridColumns, selection])
+  const selectedTotal = selection ? appleSelectionTotal(board, selection, gridColumns) : 0
   const selectedBounds = selection ? normalizeAppleSelection(selection) : null
 
   useEffect(() => () => {
@@ -146,7 +166,7 @@ export function ApplePage() {
   function pointerCell(clientX: number, clientY: number) {
     const rect = boardElement.current?.getBoundingClientRect()
     if (!rect) return null
-    return appleCellFromPoint(clientX - rect.left, clientY - rect.top, rect.width, rect.height)
+    return appleCellFromPoint(clientX - rect.left, clientY - rect.top, rect.width, rect.height, gridColumns, gridRows)
   }
 
   function beginSelection(event: PointerEvent<HTMLDivElement>) {
@@ -188,7 +208,7 @@ export function ApplePage() {
     setSelection(null)
     if (cancelled) return
 
-    const result = clearAppleSelection(board, currentDrag.selection)
+    const result = clearAppleSelection(board, currentDrag.selection, gridColumns)
     if (!result.valid) {
       showInvalidSelection()
       return
@@ -214,7 +234,7 @@ export function ApplePage() {
     <div className="play-page apple-page">
       <GameHeader title="사과 10">
         <div className="apple-hud" aria-label={`점수 ${score}점, 남은 시간 ${formatTime(timeLeft)}`}>
-          <span><small>점수</small><strong>{score}<em>/{APPLE_COUNT}</em></strong></span>
+          <span><small>순위 점수</small><strong>{score}<em>/{APPLE_COUNT}</em></strong></span>
           <span className={urgent ? 'urgent' : ''}><small>남은 시간</small><strong>{formatTime(timeLeft)}</strong></span>
         </div>
       </GameHeader>
@@ -222,7 +242,7 @@ export function ApplePage() {
       <section className="apple-layout page-wrap">
         <div className={`apple-board-panel ${invalid ? 'invalid' : ''}`}>
           <header className="apple-board-status">
-            <span><Grid3X3 /> 17 × 10</span>
+            <span><Grid3X3 /> {gridColumns} × {gridRows}</span>
             <strong className={selectedTotal === APPLE_TARGET ? 'valid' : selectedTotal > APPLE_TARGET ? 'over' : ''}>
               {selection ? <>선택 합계 <em>{selectedTotal}</em></> : <>직사각형으로 사과를 묶으세요</>}
             </strong>
@@ -230,18 +250,19 @@ export function ApplePage() {
           </header>
           <div className="apple-board-fit">
             <div
+              key={gridColumns}
               ref={boardElement}
-              className={`apple-board ${selectedTotal === APPLE_TARGET ? 'selection-valid' : ''}`}
+              className={`apple-board ${portraitGrid ? 'portrait-grid' : ''} ${selectedTotal === APPLE_TARGET ? 'selection-valid' : ''}`}
               role="application"
-              aria-label="17열 10행 사과 게임판. 드래그한 직사각형 속 사과 합계를 10으로 만드세요."
+              aria-label={`${gridColumns}열 ${gridRows}행 사과 게임판. 드래그한 직사각형 속 사과 합계를 10으로 만드세요.`}
               onPointerDown={beginSelection}
               onPointerMove={moveSelection}
               onPointerUp={(event) => endSelection(event)}
               onPointerCancel={(event) => endSelection(event, true)}
             >
               {board.map((value, index) => {
-                const row = Math.floor(index / APPLE_COLUMNS)
-                const column = index % APPLE_COLUMNS
+                const row = Math.floor(index / gridColumns)
+                const column = index % gridColumns
                 const isSelected = selectedIndices.has(index)
                 const edgeClasses = isSelected && selectedBounds
                   ? `${row === selectedBounds.top ? 'edge-top' : ''} ${row === selectedBounds.bottom ? 'edge-bottom' : ''} ${column === selectedBounds.left ? 'edge-left' : ''} ${column === selectedBounds.right ? 'edge-right' : ''}`
@@ -291,7 +312,7 @@ export function ApplePage() {
           titleId="apple-result-title"
           score={score}
           maxScore={APPLE_COUNT}
-          message={perfectClear ? `남은 시간 ${formatTime(timeLeft)} — 모든 사과를 수확했습니다.` : '120초 동안 수확한 사과가 최고 기록에 반영됩니다.'}
+          message={perfectClear ? `남은 시간 ${formatTime(timeLeft)} — 모든 사과를 수확했습니다.` : '수확한 사과 수가 높은 점수순으로 순위에 반영됩니다.'}
           saved={saved}
           onRetrySave={saveFinalScore}
           onRestart={reset}

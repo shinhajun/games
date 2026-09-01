@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   APPLE_COLUMNS,
   APPLE_COUNT,
+  APPLE_PORTRAIT_COLUMNS,
+  APPLE_PORTRAIT_ROWS,
   APPLE_ROWS,
   appleCellFromPoint,
   appleSelectionTotal,
@@ -61,5 +63,17 @@ describe('apple game board and rules', () => {
     expect(appleCellFromPoint(0, 0, 1700, 1000)).toEqual({ row: 0, column: 0 })
     expect(appleCellFromPoint(1699, 999, 1700, 1000)).toEqual({ row: 9, column: 16 })
     expect(appleCellFromPoint(-30, 1200, 1700, 1000)).toEqual({ row: 9, column: 0 })
+  })
+
+  it('supports the same 170 apples in a taller 10 by 17 mobile grid', () => {
+    const board: AppleBoard = Array(APPLE_COUNT).fill(null)
+    board[0] = 2
+    board[1] = 3
+    board[10] = 1
+    board[11] = 4
+    const selection = { start: { row: 0, column: 0 }, end: { row: 1, column: 1 } }
+
+    expect(appleCellFromPoint(999, 1699, 1000, 1700, APPLE_PORTRAIT_COLUMNS, APPLE_PORTRAIT_ROWS)).toEqual({ row: 16, column: 9 })
+    expect(clearAppleSelection(board, selection, APPLE_PORTRAIT_COLUMNS)).toMatchObject({ valid: true, total: 10, score: 4 })
   })
 })
