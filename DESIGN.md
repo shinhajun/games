@@ -4,7 +4,7 @@
 
 - This file is the product and UI source of truth for the current Hajun Arcade implementation.
 - Runtime behavior remains defined by the React/Three.js code and the tested game-rule modules.
-- Game routes are `/play/three-cushion`, `/play/four-ball`, and `/play/yacht`.
+- Game routes are `/play/three-cushion`, `/play/four-ball`, `/play/yacht`, and `/play/apple`.
 - Home and leaderboard are information surfaces and may scroll. Game routes are immersive app surfaces and must not vertically scroll.
 
 ## Brand
@@ -18,7 +18,7 @@ Hajun Arcade is a compact, premium game room: dark green felt, warm brass, preci
 3. Preserve accurate carom controls and scoring while reducing configuration-panel friction.
 4. Make Yacht dice communicate weight through gravity, wall/floor contact, bounce, angular momentum, and a readable final face.
 5. Maintain fast rendering and stable WebGL contexts on mobile devices.
-6. Make the home route a direct game launcher: all three games and leaderboard access must be obvious without promotional scrolling.
+6. Make the home route a direct game launcher: every game and leaderboard access must be obvious without promotional scrolling.
 
 ## Personas and jobs
 

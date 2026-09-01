@@ -1,7 +1,7 @@
 {
   "name": "Hajun Arcade",
   "short_name": "Hajun Arcade",
-  "description": "3쿠션, 4구, Yacht Dice를 즐기는 3D 웹 아케이드",
+  "description": "3쿠션, 4구, Yacht Dice, 사과 10을 즐기는 웹 아케이드",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#07120e",

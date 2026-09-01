@@ -9,8 +9,9 @@
 - **3쿠션** — 5목숨 동안 득점은 계속 누적하고 실패할 때만 목숨 1개 차감. 두 번째 목적구 전 쿠션 3회 이상이면 1점
 - **한국식 4구** — 5목숨 동안 두 빨간 목적구를 모두 맞히면 1점, 노란 상대 수구 접촉은 파울
 - **Yacht Dice** — 5개 주사위, 턴당 최대 3회 롤, 15개 Yatzy 족보와 상단 63점/35점 보너스(최대 359점)
+- **사과 10** — 17×10 숫자 사과판에서 직사각형 합을 10으로 만들어 120초 동안 제거한 사과 수를 겨루는 퍼즐(최대 170점)
 
-규칙 기준: [UMB Carom rules](https://files.umb-carom.org/Public/Rules/CAROM%20BILLIARD%20RULES.pdf), [대한당구연맹 4구 안내](https://kr.object.ncloudstorage.com/kbfdiv/2025_kbf_division.pdf.pdf), [Classic Yacht scoring](https://en.wikipedia.org/wiki/Yacht_%28dice_game%29).
+규칙 기준: [UMB Carom rules](https://files.umb-carom.org/Public/Rules/CAROM%20BILLIARD%20RULES.pdf), [대한당구연맹 4구 안내](https://kr.object.ncloudstorage.com/kbfdiv/2025_kbf_division.pdf.pdf), [Classic Yacht scoring](https://en.wikipedia.org/wiki/Yacht_%28dice_game%29), [게임菜園 フルーツボックス 공식 설명](https://www.gamesaien.com/game/fruit_box_a/guide/).
 
 ## 당구 실측 규격과 물리
 
@@ -41,7 +42,7 @@ cp .env.example .env
 npm run dev
 ```
 
-Supabase 환경변수가 없으면 기록은 브라우저 `localStorage`에 저장됩니다. 프로덕션은 서울 리전 Supabase 순위표에 연결되어 있습니다.
+Supabase 환경변수가 없으면 게임은 실행되지만 순위 조회와 기록 저장은 사용할 수 없습니다. 프로덕션은 서울 리전 Supabase 순위표에 연결되어 있습니다.
 
 ## Supabase 연결
 
@@ -49,7 +50,7 @@ Supabase 환경변수가 없으면 기록은 브라우저 `localStorage`에 저�
 2. Supabase Auth의 anonymous sign-in을 활성화하고 IP별 생성 제한을 설정합니다.
 3. Project Settings → API의 URL과 anon key를 `.env`에 입력한 뒤 개발 서버를 다시 시작합니다.
 
-이름은 브라우저에 캐시되고, 클라우드 기록은 화면에 드러나지 않는 Supabase anonymous auth 사용자에 귀속됩니다. 서버 시간 기반 일회성 run, 재사용 차단, 제한/최소 시간 검증을 거쳐 종목별 최고 점수·기록 시간·플레이 횟수만 저장합니다. 공개 순위에는 해시된 player key만 노출됩니다. 다만 완전한 부정 점수 방지는 서버가 Yacht RNG와 당구 샷을 직접 실행·검증하는 추가 구조가 필요합니다.
+이름은 브라우저에 캐시되고, 클라우드 기록은 화면에 드러나지 않는 Supabase anonymous auth 사용자에 귀속됩니다. 일회성 run, 재사용 차단, 점수·시간 범위 검증을 거쳐 종목별 최고 점수·기록 시간·플레이 횟수만 저장합니다. 공개 순위에는 해시된 player key만 노출됩니다. 완전한 부정 점수 방지는 서버가 Yacht RNG, 당구 샷, 사과판 시드를 직접 실행·검증하는 추가 구조가 필요합니다.
 
 ## 배포
 

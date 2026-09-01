@@ -1,4 +1,4 @@
-import { ArrowRight, CircleDot, Dices, MousePointer2, Trophy } from 'lucide-react'
+import { Apple, ArrowRight, CircleDot, Dices, MousePointer2, Trophy } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Leaderboard } from '../components/Leaderboard'
 
@@ -33,6 +33,16 @@ const games = [
     color: 'amber',
     icon: Dices,
   },
+  {
+    code: 'apple',
+    tag: 'PUZZLE · 120 SEC',
+    title: '사과 10',
+    subtitle: 'SUM TO TEN',
+    description: '직사각형 속 사과 숫자의 합을 정확히 10으로 만드세요.',
+    stat: 'MAX 170',
+    color: 'ruby',
+    icon: Apple,
+  },
 ] as const
 
 export function HomePage() {
@@ -43,7 +53,7 @@ export function HomePage() {
           <div>
             <span className="eyebrow">PICK &amp; PLAY</span>
             <h1 id="home-title">게임을 고르세요.</h1>
-            <p>세 게임 모두 설치 없이 바로 시작할 수 있습니다.</p>
+            <p>네 게임 모두 설치 없이 바로 시작할 수 있습니다.</p>
           </div>
           <Link className="home-rank-link" to="/leaderboard">
             <Trophy size={17} /> 전체 순위
@@ -86,6 +96,7 @@ export function HomePage() {
           <Leaderboard game="three-cushion" compact />
           <Leaderboard game="four-ball" compact />
           <Leaderboard game="yacht" compact />
+          <Leaderboard game="apple" compact />
         </div>
       </section>
     </div>

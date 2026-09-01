@@ -12,6 +12,7 @@ export function LeaderboardPage() {
         <Leaderboard game="three-cushion" />
         <Leaderboard game="four-ball" />
         <Leaderboard game="yacht" />
+        <Leaderboard game="apple" />
       </div>
     </div>
   )

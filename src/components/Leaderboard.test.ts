@@ -10,4 +10,8 @@ describe('leaderboard score units', () => {
   it('keeps Yacht scores in points', () => {
     expect(scoreUnit('yacht')).toBe(' PTS')
   })
+
+  it('scores the apple game by cleared apples', () => {
+    expect(scoreUnit('apple')).toBe(' 점')
+  })
 })

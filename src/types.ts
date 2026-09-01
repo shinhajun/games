@@ -1,4 +1,4 @@
-export type GameCode = 'three-cushion' | 'four-ball' | 'yacht'
+export type GameCode = 'three-cushion' | 'four-ball' | 'yacht' | 'apple'
 
 export interface PlayerProfile {
   id: string
@@ -25,4 +25,5 @@ export const GAME_META: Record<GameCode, { label: string; eyebrow: string; maxSc
   'three-cushion': { label: '3쿠션', eyebrow: 'THREE CUSHION', maxScore: null },
   'four-ball': { label: '4구', eyebrow: 'FOUR BALL', maxScore: null },
   yacht: { label: 'Yacht Dice', eyebrow: 'YACHT DICE', maxScore: 359 },
+  apple: { label: '사과 10', eyebrow: 'APPLE TEN', maxScore: 170 },
 }
