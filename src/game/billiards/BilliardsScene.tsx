@@ -5,11 +5,13 @@ import { DoubleSide, Group, Matrix4, Mesh, PerspectiveCamera, Quaternion, Vector
 import {
   applyShot,
   areBallsStopped,
+  areBallsTranslationallyStopped,
   createInitialBalls,
   cueContactGeometry,
   evaluateShot,
   getTableSpec,
   PHYSICS,
+  settleResidualSideSpin,
   shotKinematics,
   stepPhysics,
   type BallState,
@@ -461,7 +463,7 @@ function World({ mode, view, angle, elevation, power, spin, stroke, manualPull, 
   const openingShot = useRef(true)
   const active = useRef(false)
   const [shotActive, setShotActive] = useState(false)
-  const restFrames = useRef(0)
+  const stationaryTime = useRef(0)
   const physicsAccumulator = useRef(0)
   const pullRef = useRef(0)
   const rotationAxis = useMemo(() => new Vector3(), [])
@@ -497,7 +499,7 @@ function World({ mode, view, angle, elevation, power, spin, stroke, manualPull, 
       animation.current = null
       physicsAccumulator.current = 0
       pullRef.current = 0
-      restFrames.current = 0
+      stationaryTime.current = 0
     },
   }), [mode, onShotStart])
 
@@ -534,19 +536,23 @@ function World({ mode, view, angle, elevation, power, spin, stroke, manualPull, 
       }
       if (steps === 12) physicsAccumulator.current = 0
 
-      if (areBallsStopped(balls.current)) {
-        restFrames.current += 1
-        if (restFrames.current > 8) {
+      if (areBallsTranslationallyStopped(balls.current)) {
+        stationaryTime.current += steps * PHYSICS_STEP
+        const naturallyStopped = areBallsStopped(balls.current)
+        const residualSpinExpired = !naturallyStopped
+          && settleResidualSideSpin(balls.current, stationaryTime.current)
+
+        if ((naturallyStopped && stationaryTime.current >= PHYSICS.restConfirmationTime) || residualSpinExpired) {
           active.current = false
           setShotActive(false)
-          restFrames.current = 0
+          stationaryTime.current = 0
           const snapshot = [...events.current]
           const verdict = evaluateShot(mode, snapshot, { openingShot: openingShot.current })
           openingShot.current = false
           onShotEnd(verdict, snapshot)
         }
       } else {
-        restFrames.current = 0
+        stationaryTime.current = 0
       }
     }
 

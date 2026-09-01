@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
   applyShot,
+  areBallsStopped,
+  areBallsTranslationallyStopped,
   createInitialBalls,
   cueContactGeometry,
   evaluateShot,
   getTableSpec,
   PHYSICS,
+  settleResidualSideSpin,
   shotKinematics,
   shotSpeedForPower,
   stepPhysics,
@@ -209,6 +212,7 @@ describe('regulation equipment and rigid-body physics', () => {
 
   it('retains useful vertical-axis spin while the ball is still travelling', () => {
     const cue = createInitialBalls('three-cushion')[0]
+    const spec = getTableSpec('three-cushion')
     cue.position = { x: 0, y: 0 }
     applyShot(cue, 'three-cushion', 0, 20, { x: 0.55, y: 0 }, 'normal', 0)
     const initialSideSpin = cue.angularVelocity.y
@@ -217,7 +221,8 @@ describe('regulation equipment and rigid-body physics', () => {
       stepPhysics([cue], 'three-cushion', 1 / 240, () => undefined)
     }
 
-    expect(cue.angularVelocity.y).toBeGreaterThan(initialSideSpin * 0.85)
+    expect(cue.angularVelocity.y).toBeCloseTo(initialSideSpin - spec.sideSpinDeceleration * 0.5, 10)
+    expect(cue.angularVelocity.y).toBeGreaterThan(initialSideSpin * 0.5)
   })
 
   it('transfers almost all head-on momentum at the measured 0.98 restitution', () => {
@@ -271,8 +276,6 @@ describe('regulation equipment and rigid-body physics', () => {
 
   it('lets stationary side spin decay physically instead of killing it in one frame', () => {
     const cue = createInitialBalls('three-cushion')[0]
-    const spec = getTableSpec('three-cushion')
-    const radius = spec.ballDiameter / 2
     cue.velocity = { x: 0.005, y: 0 }
     cue.angularVelocity = { x: 0, y: 8, z: 0 }
 
@@ -282,13 +285,35 @@ describe('regulation equipment and rigid-body physics', () => {
     expect(cue.angularVelocity.x).toBe(0)
     expect(cue.angularVelocity.z).toBe(0)
     expect(cue.angularVelocity.y).toBeCloseTo(
-      8 - (2.5 * spec.spinningFriction * PHYSICS.gravity / radius) / 120,
+      8 - getTableSpec('three-cushion').sideSpinDeceleration / 120,
       10,
     )
 
-    for (let step = 0; step < 3 * 240; step += 1) {
+    for (let step = 0; step < 0.5 * 240; step += 1) {
       stepPhysics([cue], 'three-cushion', 1 / 240, () => undefined)
     }
     expect(cue.angularVelocity.y).toBe(0)
+  })
+
+  it('does not make the next shot wait on non-moving residual side spin', () => {
+    const balls = createInitialBalls('three-cushion')
+    balls[0].angularVelocity.y = 80
+
+    expect(areBallsTranslationallyStopped(balls)).toBe(true)
+    expect(areBallsStopped(balls)).toBe(false)
+    expect(settleResidualSideSpin(balls, PHYSICS.residualSpinGraceTime - 0.001)).toBe(false)
+    expect(areBallsStopped(balls)).toBe(false)
+    expect(settleResidualSideSpin(balls, PHYSICS.residualSpinGraceTime)).toBe(true)
+    expect(areBallsStopped(balls)).toBe(true)
+  })
+
+  it('never clears residual spin while any ball can still move or collide', () => {
+    const balls = createInitialBalls('three-cushion')
+    balls[0].velocity.x = PHYSICS.stopSpeed * 2
+    balls[0].angularVelocity.y = 80
+
+    expect(settleResidualSideSpin(balls, PHYSICS.residualSpinGraceTime)).toBe(false)
+    expect(balls[0].velocity.x).toBe(PHYSICS.stopSpeed * 2)
+    expect(balls[0].angularVelocity.y).toBe(80)
   })
 })

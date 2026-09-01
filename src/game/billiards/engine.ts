@@ -32,7 +32,7 @@ export interface TableSpec {
   frameWidth: number
   slidingFriction: number
   rollingFriction: number
-  spinningFriction: number
+  sideSpinDeceleration: number
 }
 
 export type ShotEvent =
@@ -63,7 +63,8 @@ export const TABLE_SPECS: Record<BilliardsMode, TableSpec> = {
     frameWidth: 0.125,
     slidingFriction: 0.2,
     rollingFriction: 0.008,
-    spinningFriction: 0.008,
+    // High-speed tracking measured cloth resistance to stationary side spin at 22 rad/s².
+    sideSpinDeceleration: 22,
   },
   'four-ball': {
     label: '국제식 중대',
@@ -75,7 +76,7 @@ export const TABLE_SPECS: Record<BilliardsMode, TableSpec> = {
     frameWidth: 0.12,
     slidingFriction: 0.2,
     rollingFriction: 0.0128,
-    spinningFriction: 0.01,
+    sideSpinDeceleration: 22,
   },
 }
 
@@ -91,6 +92,8 @@ export const PHYSICS = {
   maximumCueElevation: 45,
   minimumShotSpeed: 0.18,
   maximumShotSpeed: 6.2,
+  restConfirmationTime: 0.08,
+  residualSpinGraceTime: 0.45,
 } as const
 
 const CUSHION_PARAMETERS = {
@@ -336,10 +339,25 @@ export function applyShot(ball: BallState, mode: BilliardsMode, angle: number, p
 }
 
 export function areBallsStopped(balls: BallState[]) {
+  return areBallsTranslationallyStopped(balls) && balls.every((ball) => (
+    Math.abs(ball.angularVelocity.y) < PHYSICS.stopSpin
+  ))
+}
+
+export function areBallsTranslationallyStopped(balls: BallState[]) {
   return balls.every((ball) => (
     Math.hypot(ball.velocity.x, ball.velocity.y) < PHYSICS.stopSpeed
-    && Math.hypot(ball.angularVelocity.x, ball.angularVelocity.y, ball.angularVelocity.z) < PHYSICS.stopSpin
+    && Math.hypot(ball.angularVelocity.x, ball.angularVelocity.z) < PHYSICS.stopSpin
   ))
+}
+
+export function settleResidualSideSpin(balls: BallState[], stationaryTime: number) {
+  if (stationaryTime < PHYSICS.residualSpinGraceTime || !areBallsTranslationallyStopped(balls)) return false
+  for (const ball of balls) {
+    ball.velocity = { x: 0, y: 0 }
+    ball.angularVelocity = zeroAngularVelocity()
+  }
+  return true
 }
 
 function applyClothFriction(ball: BallState, spec: TableSpec, dt: number) {
@@ -372,8 +390,7 @@ function applyClothFriction(ball: BallState, spec: TableSpec, dt: number) {
     ball.angularVelocity.z = -ball.velocity.x / radius
   }
 
-  const spinDeceleration = 2.5 * spec.spinningFriction * PHYSICS.gravity / radius
-  ball.angularVelocity.y = approachZero(ball.angularVelocity.y, spinDeceleration * dt)
+  ball.angularVelocity.y = approachZero(ball.angularVelocity.y, spec.sideSpinDeceleration * dt)
   if (Math.abs(ball.angularVelocity.y) < PHYSICS.stopSpin) ball.angularVelocity.y = 0
 
   const remainingSlip = Math.hypot(
