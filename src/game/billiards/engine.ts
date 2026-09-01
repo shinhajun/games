@@ -32,7 +32,7 @@ export interface TableSpec {
   frameWidth: number
   slidingFriction: number
   rollingFriction: number
-  sideSpinDeceleration: number
+  spinningFriction: number
 }
 
 export type ShotEvent =
@@ -63,8 +63,8 @@ export const TABLE_SPECS: Record<BilliardsMode, TableSpec> = {
     frameWidth: 0.125,
     slidingFriction: 0.2,
     rollingFriction: 0.008,
-    // High-speed tracking measured cloth resistance to stationary side spin at 22 rad/s².
-    sideSpinDeceleration: 22,
+    // Empirically calibrated against real shots on a heated three-cushion table.
+    spinningFriction: 0.022,
   },
   'four-ball': {
     label: '국제식 중대',
@@ -76,7 +76,7 @@ export const TABLE_SPECS: Record<BilliardsMode, TableSpec> = {
     frameWidth: 0.12,
     slidingFriction: 0.2,
     rollingFriction: 0.0128,
-    sideSpinDeceleration: 22,
+    spinningFriction: 0.022,
   },
 }
 
@@ -390,7 +390,8 @@ function applyClothFriction(ball: BallState, spec: TableSpec, dt: number) {
     ball.angularVelocity.z = -ball.velocity.x / radius
   }
 
-  ball.angularVelocity.y = approachZero(ball.angularVelocity.y, spec.sideSpinDeceleration * dt)
+  const spinDeceleration = 2.5 * spec.spinningFriction * PHYSICS.gravity / radius
+  ball.angularVelocity.y = approachZero(ball.angularVelocity.y, spinDeceleration * dt)
   if (Math.abs(ball.angularVelocity.y) < PHYSICS.stopSpin) ball.angularVelocity.y = 0
 
   const remainingSlip = Math.hypot(

@@ -221,7 +221,9 @@ describe('regulation equipment and rigid-body physics', () => {
       stepPhysics([cue], 'three-cushion', 1 / 240, () => undefined)
     }
 
-    expect(cue.angularVelocity.y).toBeCloseTo(initialSideSpin - spec.sideSpinDeceleration * 0.5, 10)
+    const radius = spec.ballDiameter / 2
+    const spinDeceleration = 2.5 * spec.spinningFriction * PHYSICS.gravity / radius
+    expect(cue.angularVelocity.y).toBeCloseTo(initialSideSpin - spinDeceleration * 0.5, 10)
     expect(cue.angularVelocity.y).toBeGreaterThan(initialSideSpin * 0.5)
   })
 
@@ -276,6 +278,8 @@ describe('regulation equipment and rigid-body physics', () => {
 
   it('lets stationary side spin decay physically instead of killing it in one frame', () => {
     const cue = createInitialBalls('three-cushion')[0]
+    const spec = getTableSpec('three-cushion')
+    const radius = spec.ballDiameter / 2
     cue.velocity = { x: 0.005, y: 0 }
     cue.angularVelocity = { x: 0, y: 8, z: 0 }
 
@@ -285,7 +289,7 @@ describe('regulation equipment and rigid-body physics', () => {
     expect(cue.angularVelocity.x).toBe(0)
     expect(cue.angularVelocity.z).toBe(0)
     expect(cue.angularVelocity.y).toBeCloseTo(
-      8 - getTableSpec('three-cushion').sideSpinDeceleration / 120,
+      8 - (2.5 * spec.spinningFriction * PHYSICS.gravity / radius) / 120,
       10,
     )
 
